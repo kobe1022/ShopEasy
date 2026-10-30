@@ -12,7 +12,7 @@ from loguru import logger
 
 from shopeasy.shared.broker import consume
 from shopeasy.shared.config import EVENTLOG_PATH
-from shopeasy.shared.events import Event
+from shopeasy.shared.events import Event, parse_payload
 
 DELIMITER = ";"  # Semikolon, damit Excel (deutsch) die Datei direkt richtig oeffnet
 
@@ -48,6 +48,10 @@ def append_event(event: Event, path: Path) -> None:
 
 
 def handle(event: Event) -> None:
+    # Payload pruefen (Team-Vorgabe): passt er nicht zum Event-Typ, wirft
+    # parse_payload einen Fehler und die Nachricht landet in der Dead-Letter-Queue
+    # statt im Event-Log.
+    parse_payload(event)
     append_event(event, Path(EVENTLOG_PATH))
     logger.info(
         "Event-Log: {};{};{}",
