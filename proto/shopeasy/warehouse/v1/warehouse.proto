@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package shopeasy.warehouse.v1;
+
+// Rolle des WMS: Wareneingang und Zustandserfassung (Scanner-App im Lager).
+// Soll-BPMN: "Wareneingang registrieren, Prüffrist setzen", "Retoure bereits
+// storniert?", "Ware prüfen und Zustand erfassen", "Prüfergebnis im WMS speichern".
+service WarehouseService {
+  rpc RegisterGoodsReceipt(GoodsReceiptRequest) returns (GoodsReceiptResponse);
+  rpc RecordInspection(InspectionRequest) returns (InspectionResponse);
+  rpc GetInspection(RetourenIdRequest) returns (InspectionResponse);
+}
+
+enum Condition {
+  CONDITION_UNSPECIFIED = 0;
+  NEUWERTIG = 1;
+  GETRAGEN = 2;
+  BESCHAEDIGT = 3;
+  UNVOLLSTAENDIG = 4;
+  FALSCHER_ARTIKEL = 5;
+}
+
+message GoodsReceiptRequest {
+  string retouren_id = 1;
+  string scanner_id = 2;
+  string scanned_at = 3;  // ISO-8601, UTC
+}
+
+message GoodsReceiptResponse {
+  string retouren_id = 1;
+  bool already_cancelled = 2;  // Gateway "Retoure bereits storniert?"
+  string pruef_frist = 3;      // 24 h nach Wareneingang, ISO-8601
+}
+
+message InspectionRequest {
+  string retouren_id = 1;
+  Condition condition = 2;
+  string inspector = 3;
+  string note = 4;
+  repeated string photo_refs = 5;  // Fotos bei Schäden oder unklaren Fällen
+}
+
+message InspectionResponse {
+  string retouren_id = 1;
+  Condition condition = 2;
+  string recorded_at = 3;  // ISO-8601, UTC
+}
+
+message RetourenIdRequest {
+  string retouren_id = 1;
+}

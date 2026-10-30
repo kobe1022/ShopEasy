@@ -1,0 +1,92 @@
+"""RabbitMQ-Anbindung: Topologie, Publish-Helper und Consumer-Schleife."""
+
+from collections.abc import Callable
+
+import pika
+from loguru import logger
+from pika.adapters.blocking_connection import BlockingChannel
+
+from shopeasy.shared.config import RABBITMQ_URL
+from shopeasy.shared.events import Event
+
+EXCHANGE = "retouren.status"
+DEAD_LETTER_EXCHANGE = "retouren.dlx"
+DEAD_LETTER_QUEUE = "retouren.dlq"
+
+# Queue -> Routing-Keys; jeder Consumer hat eine eigene Queue (Publish/Subscribe).
+QUEUES: dict[str, list[str]] = {
+    "kundeninfo": [
+        "retoure.registriert",
+        "retoure.abgelehnt",
+        "label.bereitgestellt",
+        "ruecksendung.unterwegs",
+        "ware.eingegangen",
+        "retoure.angenommen",
+        "erstattung.abgeschlossen",
+        "retoure.storniert",
+    ],
+    "eventlog": ["#"],
+}
+
+
+def connect() -> pika.BlockingConnection:
+    return pika.BlockingConnection(pika.URLParameters(RABBITMQ_URL))
+
+
+def declare_topology(channel: BlockingChannel) -> None:
+    """Legt Exchanges, Queues und Dead-Letter-Queue an (idempotent)."""
+    channel.exchange_declare(EXCHANGE, exchange_type="topic", durable=True)
+    channel.exchange_declare(DEAD_LETTER_EXCHANGE, exchange_type="fanout", durable=True)
+    channel.queue_declare(DEAD_LETTER_QUEUE, durable=True)
+    channel.queue_bind(DEAD_LETTER_QUEUE, DEAD_LETTER_EXCHANGE)
+    for queue, routing_keys in QUEUES.items():
+        channel.queue_declare(
+            queue,
+            durable=True,
+            arguments={"x-dead-letter-exchange": DEAD_LETTER_EXCHANGE},
+        )
+        for key in routing_keys:
+            channel.queue_bind(queue, EXCHANGE, routing_key=key)
+
+
+def publish(event: Event) -> None:
+    """Publiziert ein Event persistent auf dem Topic-Exchange."""
+    with connect() as connection:
+        channel = connection.channel()
+        declare_topology(channel)
+        channel.basic_publish(
+            exchange=EXCHANGE,
+            routing_key=event.event_type.value,
+            body=event.model_dump_json().encode(),
+            properties=pika.BasicProperties(
+                content_type="application/json",
+                delivery_mode=pika.DeliveryMode.Persistent,
+                message_id=event.event_id,
+            ),
+        )
+    logger.info("Event publiziert: {} {}", event.event_type.value, event.retouren_id)
+
+
+def consume(queue: str, handler: Callable[[Event], None]) -> None:
+    """Verarbeitet Nachrichten einer Queue mit manuellem Ack.
+
+    Nicht verarbeitbare Nachrichten (ungueltiges JSON, Fehler im Handler) werden
+    ohne Requeue abgelehnt und landen in der Dead-Letter-Queue.
+    """
+    with connect() as connection:
+        channel = connection.channel()
+        declare_topology(channel)
+        channel.basic_qos(prefetch_count=1)
+
+        def on_message(ch, method, _properties, body):
+            try:
+                handler(Event.model_validate_json(body))
+            except Exception:  # noqa: BLE001 - jeder Fehler fuehrt zur Dead-Letter-Queue
+                logger.exception("Nachricht nicht verarbeitbar -> Dead-Letter-Queue")
+                ch.basic_nack(method.delivery_tag, requeue=False)
+            else:
+                ch.basic_ack(method.delivery_tag)
+
+        channel.basic_consume(queue, on_message)
+        logger.info("Consumer wartet auf Queue '{}'", queue)
+        channel.start_consuming()
