@@ -1,8 +1,10 @@
 """Consumer Event-Log: schreibt jedes Event fuer Process Mining. Zustaendig: Muhammed.
 
-TODO: jedes Event als Zeile (Fall-ID = retouren_id, Aktivitaet = event_type,
-Zeitstempel) in CSV oder DB schreiben; das ist die Datenbasis fuer Sprint 3
-(Celonis) und die KPI-Berechnung. Idempotenz ueber event_id.
+Jedes Event wird als Zeile in data/eventlog.csv angehaengt (Pfad ueber EVENTLOG_PATH):
+Fall-ID = retouren_id, Aktivitaet = event_type, Zeitstempel. Das ist die Datenbasis
+fuer Sprint 3 (Celonis) und die KPI-Berechnung.
+
+TODO (#5): Idempotenz ueber event_id.
 """
 
 import csv
