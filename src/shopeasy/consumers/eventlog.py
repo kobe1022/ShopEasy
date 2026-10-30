@@ -11,6 +11,7 @@ from pathlib import Path
 from loguru import logger
 
 from shopeasy.shared.broker import consume
+from shopeasy.shared.config import EVENTLOG_PATH
 from shopeasy.shared.events import Event
 
 DELIMITER = ";"  # Semikolon, damit Excel (deutsch) die Datei direkt richtig oeffnet
@@ -39,7 +40,15 @@ def ensure_file(path: Path) -> None:
         csv.writer(file, delimiter=DELIMITER).writerow(COLUMNS)
 
 
+def append_event(event: Event, path: Path) -> None:
+    """Haengt ein Event als neue Zeile an die CSV-Datei an."""
+    ensure_file(path)
+    with path.open("a", newline="", encoding="utf-8") as file:
+        csv.writer(file, delimiter=DELIMITER).writerow(to_row(event))
+
+
 def handle(event: Event) -> None:
+    append_event(event, Path(EVENTLOG_PATH))
     logger.info(
         "Event-Log: {};{};{}",
         event.retouren_id,
