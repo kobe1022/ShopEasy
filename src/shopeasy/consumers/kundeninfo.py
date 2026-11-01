@@ -7,7 +7,7 @@ Mailtext je Event-Typ. Doppelt zugestellte Events ignoriert `shared.broker.consu
 from loguru import logger
 
 from shopeasy.shared.broker import consume
-from shopeasy.shared.events import Event, EventType
+from shopeasy.shared.events import Event, EventType, parse_payload
 
 # Betreff und Text je Event-Typ. Platzhalter in {} werden mit den Feldern aus
 # dem Payload gefuellt (z.B. {tracking_nr}), {retouren_id} gibt es immer.
@@ -66,6 +66,18 @@ MAIL_TEXTE: dict[EventType, tuple[str, str]] = {
         "deine Retoure {retouren_id} ist storniert. Grund: {grund}.",
     ),
 }
+
+
+def mail_inhalt(event: Event) -> tuple[str, str]:
+    """Liefert Betreff und Text der Status-Mail fuer ein Event.
+
+    Der Payload wird mit `parse_payload` geprueft; passt er nicht zum Event-Typ,
+    gibt es einen Fehler und die Nachricht landet in der Dead-Letter-Queue.
+    """
+    betreff, vorlage = MAIL_TEXTE[event.event_type]
+    felder = parse_payload(event).model_dump()
+    text = vorlage.format(retouren_id=event.retouren_id, **felder)
+    return betreff, text
 
 
 def handle(event: Event) -> None:
