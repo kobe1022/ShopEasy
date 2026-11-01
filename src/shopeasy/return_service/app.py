@@ -11,6 +11,12 @@ TODO (siehe docs/sprint2-plan.md, Abschnitt 3.2):
 
 from fastapi import FastAPI, HTTPException
 
+from shopeasy.return_service.schemas import WebshopAnmeldung
+from shopeasy.shared import retourenakte
+from shopeasy.shared.models import Retoure
+
+QUELLE = "retouren-service"
+
 app = FastAPI(title="ShopEasy Retouren-Service", version="0.1.0")
 
 
@@ -23,10 +29,14 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.post("/returns", status_code=201)
-def create_return():
-    """Webshop-Anmeldung entgegennehmen und Retourenvorgang anlegen."""
-    raise _not_implemented()
+@app.post("/returns", status_code=201, response_model=Retoure)
+def create_return(anmeldung: WebshopAnmeldung):
+    """Webshop-Anmeldung entgegennehmen und Retourenvorgang anlegen.
+
+    Soll-BPMN: "Retoure ueber Webshop-Formular anmelden" ->
+    "Retourenvorgang anlegen, Retouren-ID vergeben".
+    """
+    return retourenakte.anlegen(anmeldung.als_neue_retoure(), quelle=QUELLE)
 
 
 @app.post("/returns/poll")
