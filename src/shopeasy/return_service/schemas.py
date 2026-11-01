@@ -1,0 +1,35 @@
+"""Anfrage- und Antwortformate des Retouren-Service.
+
+Das interne Modell (`NeueRetoure`, `Retoure`) liegt in `shopeasy.shared.models`.
+Hier stehen nur die Formate, die der Service nach aussen anbietet.
+"""
+
+from datetime import UTC, datetime
+
+from pydantic import BaseModel, Field
+
+from shopeasy.shared.models import EMAIL_PATTERN, Artikel, Kanal, NeueRetoure
+
+
+class WebshopAnmeldung(BaseModel):
+    """Retourenanmeldung ueber das Webshop-Formular (Issue #10).
+
+    Kanal und externe ID setzt der Service selbst: der Webshop gehoert zu
+    ShopEasy, es gibt also keine fremde Meldungs-ID.
+    """
+
+    bestell_nr: str = Field(min_length=1, examples=["ORD-100300"])
+    kunde_email: str = Field(pattern=EMAIL_PATTERN, examples=["max@example.org"])
+    grund_text: str = Field(min_length=1, examples=["Farbe gefaellt nicht"])
+    artikel: list[Artikel] = Field(min_length=1)
+
+    def als_neue_retoure(self) -> NeueRetoure:
+        """Ueberfuehrt die Anmeldung in das einheitliche Modell.
+
+        Meldedatum ist der Tag der Anmeldung (fuer die Pruefung der Rueckgabefrist).
+        """
+        return NeueRetoure(
+            kanal=Kanal.WEBSHOP,
+            gemeldet_am=datetime.now(UTC).date(),
+            **self.model_dump(),
+        )
