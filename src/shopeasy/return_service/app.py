@@ -14,6 +14,7 @@ from typing import Literal
 from fastapi import FastAPI, HTTPException
 
 from shopeasy.marketplace_mock.formate import AmazonReturn, ZalandoReturn
+from shopeasy.return_service.artikelstamm import UnbekannteEAN
 from shopeasy.return_service.normalisierung import (
     amazon_zu_neue_retoure,
     zalando_zu_neue_retoure,
@@ -21,6 +22,7 @@ from shopeasy.return_service.normalisierung import (
 from shopeasy.return_service.schemas import RetoureMitHistorie, WebshopAnmeldung
 from shopeasy.shared import retourenakte
 from shopeasy.shared.models import Retoure
+from shopeasy.shared.retourenakte import DubletteError
 
 QUELLE = "retouren-service"
 
@@ -55,16 +57,35 @@ def receive_marketplace_return(
     Soll-BPMN: Start "Marktplatz-Meldung eingegangen (REST)" ->
     "Retourenvorgang anlegen, Retouren-ID vergeben". Die Meldung wird zuerst in
     das einheitliche Modell uebersetzt (Issue #9).
+
+    Antworten: 201 angelegt, 409 doppelte Meldung (mit bestehender Retouren-ID),
+    422 falsches Format oder unbekannter Artikel.
     """
-    if marketplace == "amazon" and isinstance(meldung, AmazonReturn):
-        neu = amazon_zu_neue_retoure(meldung)
-    elif marketplace == "zalando" and isinstance(meldung, ZalandoReturn):
-        neu = zalando_zu_neue_retoure(meldung)
-    else:
+    try:
+        if marketplace == "amazon" and isinstance(meldung, AmazonReturn):
+            neu = amazon_zu_neue_retoure(meldung)
+        elif marketplace == "zalando" and isinstance(meldung, ZalandoReturn):
+            neu = zalando_zu_neue_retoure(meldung)
+        else:
+            raise HTTPException(
+                status_code=422, detail=f"Meldung ist nicht im {marketplace}-Format"
+            )
+    except UnbekannteEAN as fehler:
+        # Soll-BPMN: "Anmeldung pruefen und vervollstaendigen" (manuell)
+        raise HTTPException(status_code=422, detail=str(fehler)) from fehler
+
+    try:
+        return retourenakte.anlegen(neu, quelle=QUELLE)
+    except DubletteError as fehler:
+        # Dieselbe Meldung kam schon einmal: keine zweite Retoure anlegen,
+        # sondern die bestehende Retouren-ID zurueckmelden (Issue #11).
         raise HTTPException(
-            status_code=422, detail=f"Meldung ist nicht im {marketplace}-Format"
-        )
-    return retourenakte.anlegen(neu, quelle=QUELLE)
+            status_code=409,
+            detail={
+                "meldung": str(fehler),
+                "retouren_id": fehler.bestehende_id,
+            },
+        ) from fehler
 
 
 @app.post("/returns/poll")
