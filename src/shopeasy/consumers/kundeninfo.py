@@ -90,7 +90,12 @@ def empfaenger(retouren_id: str) -> str:
 
 
 def handle(event: Event) -> None:
-    logger.info("Kundeninfo: {} fuer {}", event.event_type.value, event.retouren_id)
+    if event.event_type not in MAIL_TEXTE:
+        logger.debug("Kundeninfo: keine Mail fuer {}", event.event_type.value)
+        return
+    betreff, text = mail_inhalt(event)
+    an = empfaenger(event.retouren_id)
+    logger.info("Status-Mail an {} | Betreff: {} | Hallo, {}", an, betreff, text)
 
 
 if __name__ == "__main__":
