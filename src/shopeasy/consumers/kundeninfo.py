@@ -1,7 +1,7 @@
 """Consumer Kundeninfo: simulierte Status-Mail im Log. Zustaendig: Muhammed.
 
 TODO: bei kundenrelevanten Events eine Status-Mail ins Log schreiben (KPI K14),
-Mailtext je Event-Typ, Idempotenz ueber event_id (doppelte Zustellung ignorieren).
+Mailtext je Event-Typ. Doppelt zugestellte Events ignoriert `shared.broker.consume`.
 """
 
 from loguru import logger

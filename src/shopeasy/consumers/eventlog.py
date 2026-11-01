@@ -4,7 +4,8 @@ Jedes Event wird als Zeile in data/eventlog.csv angehaengt (Pfad ueber EVENTLOG_
 Fall-ID = retouren_id, Aktivitaet = event_type, Zeitstempel. Das ist die Datenbasis
 fuer Sprint 3 (Celonis) und die KPI-Berechnung.
 
-TODO (#5): Idempotenz ueber event_id.
+Doppelt zugestellte Events (gleiche event_id) schreibt `shared.broker.consume` nur
+einmal (Idempotenz, Issue #5).
 """
 
 import csv

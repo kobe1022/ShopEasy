@@ -5,6 +5,7 @@ import os
 RABBITMQ_URL = os.environ.get("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
 DB_PATH = os.environ.get("DB_PATH", "data/retourenakte.db")
 EVENTLOG_PATH = os.environ.get("EVENTLOG_PATH", "data/eventlog.csv")
+IDEMPOTENZ_DB = os.environ.get("IDEMPOTENZ_DB", "data/verarbeitete_events.db")
 
 MARKETPLACE_MOCK_PORT = int(os.environ.get("MARKETPLACE_MOCK_PORT", "8001"))
 RETURN_SERVICE_PORT = int(os.environ.get("RETURN_SERVICE_PORT", "8002"))
