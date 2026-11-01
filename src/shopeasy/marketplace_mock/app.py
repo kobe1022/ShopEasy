@@ -5,9 +5,9 @@ Amazon und Zalando liefern Retourenmeldungen in unterschiedlichen JSON-Formaten
 ab (Polling) und quittiert sie, siehe docs/sprint2-plan.md, Abschnitt 3.
 """
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Body, FastAPI, HTTPException
 
 from shopeasy.marketplace_mock.formate import AmazonReturn, ZalandoReturn
 from shopeasy.marketplace_mock.testdaten import amazon_testdaten, zalando_testdaten
@@ -83,7 +83,57 @@ def acknowledge_return(marketplace: Marketplace, return_id: str):
     raise _not_implemented()
 
 
-@app.post("/{marketplace}/returns", status_code=201)
-def create_test_return(marketplace: Marketplace):
-    """Testfall fuer die Demo erzeugen."""
-    raise _not_implemented()
+BEISPIELE = {
+    "amazon": {
+        "summary": "Amazon-Meldung",
+        "value": {
+            "returnId": "AMZ-RET-001099",
+            "orderId": "ORD-100500",
+            "buyerEmail": "demo@example.com",
+            "returnReasonCode": "DEFECTIVE",
+            "customerComment": "Reissverschluss klemmt",
+            "deliveryDate": "2026-10-30",
+            "requestedAt": "2026-11-02T09:00:00Z",
+            "items": [{"sku": "JACKE-SCHWARZ-L", "quantity": 1}],
+        },
+    },
+    "zalando": {
+        "summary": "Zalando-Meldung",
+        "value": {
+            "id": "ZRET-2026-001099",
+            "order": {"number": "ORD-100501", "delivered_on": "30.10.2026"},
+            "customer": {"email": "demo@example.org"},
+            "reason": {"code": 20, "text": "Naht offen"},
+            "announced_on": "02.11.2026",
+            "articles": [{"ean": "4012345000062", "qty": 1}],
+        },
+    },
+}
+
+
+@app.post("/{marketplace}/returns", status_code=201, response_model=Meldung)
+def create_test_return(
+    marketplace: Marketplace,
+    meldung: Annotated[Meldung, Body(openapi_examples=BEISPIELE)],
+):
+    """Testfall fuer die Demo erzeugen.
+
+    Die Meldung muss im Format des Marktplatzes sein. Gibt es die ID schon,
+    gilt das als erneutes Senden durch den Marktplatz: die Meldung steht dann
+    wieder auf "neu". So entsteht in der Demo eine doppelte Meldung, die der
+    Retouren-Service per Dublettenpruefung abfangen muss (409, Issue #11).
+    """
+    erwartet = AmazonReturn if marketplace == "amazon" else ZalandoReturn
+    if not isinstance(meldung, erwartet):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Meldung ist nicht im {marketplace}-Format",
+        )
+    neu_status = STATUS_WERTE[marketplace]["new"]
+    if isinstance(meldung, AmazonReturn):
+        meldung = meldung.model_copy(update={"status": neu_status})
+        MELDUNGEN["amazon"][meldung.returnId] = meldung
+    else:
+        meldung = meldung.model_copy(update={"state": neu_status})
+        MELDUNGEN["zalando"][meldung.id] = meldung
+    return meldung
