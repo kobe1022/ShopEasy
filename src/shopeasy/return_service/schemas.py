@@ -8,7 +8,14 @@ from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field
 
-from shopeasy.shared.models import EMAIL_PATTERN, Artikel, Kanal, NeueRetoure
+from shopeasy.shared.models import (
+    EMAIL_PATTERN,
+    Artikel,
+    Kanal,
+    NeueRetoure,
+    Retoure,
+    StatusEintrag,
+)
 
 
 class WebshopAnmeldung(BaseModel):
@@ -33,3 +40,14 @@ class WebshopAnmeldung(BaseModel):
             gemeldet_am=datetime.now(UTC).date(),
             **self.model_dump(),
         )
+
+
+class RetoureMitHistorie(Retoure):
+    """Antwort von GET /returns/{retouren_id} (Issue #14).
+
+    Der Retourenvorgang plus alle Statuswechsel, aeltester zuerst. Damit sehen
+    Kundenservice und Kund:in jederzeit, wo die Retoure steht (adressiert S2:
+    keine Ende-zu-Ende-Transparenz).
+    """
+
+    historie: list[StatusEintrag]
