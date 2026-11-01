@@ -111,3 +111,33 @@ def test_gute_und_doppelte_nachricht_werden_bestaetigt(store):
     # die Dead-Letter-Queue.
     assert channel.acks == [1, 2]
     assert channel.nacks == []
+
+
+class TopologieChannel:
+    """Merkt sich, welche Exchanges, Queues und Bindungen angelegt werden."""
+
+    def __init__(self) -> None:
+        self.queues: dict[str, dict] = {}
+        self.bindungen: list[tuple[str, str]] = []
+
+    def exchange_declare(self, exchange, exchange_type, durable):
+        pass
+
+    def queue_declare(self, queue, durable, arguments=None):
+        self.queues[queue] = arguments or {}
+
+    def queue_bind(self, queue, exchange, routing_key=None):
+        self.bindungen.append((queue, exchange))
+
+
+def test_jede_queue_leitet_abgelehnte_nachrichten_in_die_dlq():
+    channel = TopologieChannel()
+
+    broker.declare_topology(channel)
+
+    for queue in broker.QUEUES:
+        assert (
+            channel.queues[queue]["x-dead-letter-exchange"]
+            == broker.DEAD_LETTER_EXCHANGE
+        )
+    assert (broker.DEAD_LETTER_QUEUE, broker.DEAD_LETTER_EXCHANGE) in channel.bindungen
