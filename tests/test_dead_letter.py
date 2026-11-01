@@ -9,7 +9,7 @@ muss dafuer nicht laufen: ein Fake-Channel merkt sich nur Ack und Nack.
 import pytest
 
 from shopeasy.consumers import eventlog
-from shopeasy.shared import broker, config
+from shopeasy.shared import broker
 from shopeasy.shared.events import (
     Event,
     EventType,
@@ -59,7 +59,7 @@ def test_kaputtes_json_landet_in_der_dead_letter_queue(store):
 
 def test_falscher_payload_landet_in_der_dead_letter_queue(store, monkeypatch, tmp_path):
     # Event-Typ "pruefung.abgeschlossen", aber im Payload fehlt "condition"
-    monkeypatch.setattr(config, "EVENTLOG_PATH", str(tmp_path / "eventlog.csv"))
+    monkeypatch.setattr(eventlog, "EVENTLOG_PATH", str(tmp_path / "eventlog.csv"))
     kaputt = Event(
         event_type=EventType.PRUEFUNG_ABGESCHLOSSEN,
         retouren_id="RET-2026-000001",
@@ -98,3 +98,16 @@ def test_abgelehnte_nachricht_wird_nicht_als_verarbeitet_gemerkt(store):
     )
 
     assert not store.bereits_verarbeitet("eventlog", event.event_id)
+
+
+def test_gute_und_doppelte_nachricht_werden_bestaetigt(store):
+    nachricht = gutes_event().model_dump_json().encode()
+    channel = FakeChannel()
+
+    broker.bestaetigen(channel, 1, "eventlog", nachricht, lambda e: None, store)
+    broker.bestaetigen(channel, 2, "eventlog", nachricht, lambda e: None, store)
+
+    # Auch das Duplikat bekommt ein Ack: es ist kein Fehler und gehoert nicht in
+    # die Dead-Letter-Queue.
+    assert channel.acks == [1, 2]
+    assert channel.nacks == []
