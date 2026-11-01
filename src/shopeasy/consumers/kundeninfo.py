@@ -1,7 +1,9 @@
 """Consumer Kundeninfo: simulierte Status-Mail im Log. Zustaendig: Muhammed.
 
-TODO: bei kundenrelevanten Events eine Status-Mail ins Log schreiben (KPI K14),
-Mailtext je Event-Typ. Doppelt zugestellte Events ignoriert `shared.broker.consume`.
+Bei jedem kundenrelevanten Event (Queue "kundeninfo") wird eine Status-Mail mit
+passendem Text ins Log geschrieben. So muss die Kundin nicht nachfragen (KPI K14).
+Die Mail-Adresse kommt aus der Retourenakte (`retourenakte.holen`).
+Doppelt zugestellte Events ignoriert `shared.broker.consume`.
 """
 
 from loguru import logger
