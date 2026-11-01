@@ -51,3 +51,29 @@ class RetoureMitHistorie(Retoure):
     """
 
     historie: list[StatusEintrag]
+
+
+class PollEintrag(BaseModel):
+    """Eine abgeholte Marktplatz-Meldung und was mit ihr passiert ist."""
+
+    marketplace: str
+    externe_id: str
+    retouren_id: str | None = None
+    hinweis: str = ""
+
+
+class PollErgebnis(BaseModel):
+    """Antwort von POST /returns/poll (Issue #13).
+
+    - angelegt: neue Retoure angelegt und beim Marktplatz quittiert
+    - dubletten: Meldung war schon bekannt, nur quittiert (keine zweite Retoure)
+    - manuell_pruefen: konnte nicht uebersetzt werden (z.B. unbekannte EAN), wird
+      NICHT quittiert und taucht beim naechsten Abholen wieder auf
+      (Soll-BPMN: "Anmeldung pruefen und vervollstaendigen")
+    - nicht_erreichbar: Marktplaetze, die nicht geantwortet haben
+    """
+
+    angelegt: list[PollEintrag] = []
+    dubletten: list[PollEintrag] = []
+    manuell_pruefen: list[PollEintrag] = []
+    nicht_erreichbar: list[str] = []
