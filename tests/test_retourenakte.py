@@ -41,6 +41,7 @@ def zalando_retoure(externe_id: str = "ZRET-2026-001002") -> NeueRetoure:
         grund_text="Zu gross, passt nicht",
         artikel=[Artikel(sku="PULLI-BLAU-M", menge=1), Artikel(sku="SCHAL-ROT")],
         gemeldet_am=date(2026, 11, 2),
+        geliefert_am=date(2026, 10, 28),
     )
 
 
@@ -99,6 +100,7 @@ def test_anlegen_und_holen(db):
     assert angelegt.status == RetourenStatus.REGISTRIERT
     assert [a.sku for a in angelegt.artikel] == ["PULLI-BLAU-M", "SCHAL-ROT"]
     assert angelegt.gemeldet_am == date(2026, 11, 2)
+    assert angelegt.geliefert_am == date(2026, 10, 28)
     assert retourenakte.holen(angelegt.retouren_id, db_path=db) == angelegt
 
 
@@ -235,3 +237,15 @@ def test_registriert_payload_aus_retoure(db):
     )
     assert event.payload["kanal"] == "ZALANDO"
     assert event.payload["artikel"][0] == {"sku": "PULLI-BLAU-M", "menge": 1}
+
+
+def test_alte_datenbank_wird_nachgeruestet(db):
+    """Eine Akte aus der ersten Version (ohne geliefert_am) bleibt nutzbar."""
+    import sqlite3
+
+    alt = sqlite3.connect(db)
+    alt.executescript(retourenakte.SCHEMA.replace("    geliefert_am    TEXT,\n", ""))
+    alt.close()
+
+    angelegt = retourenakte.anlegen(zalando_retoure(), "test", db_path=db)
+    assert angelegt.geliefert_am == date(2026, 10, 28)
