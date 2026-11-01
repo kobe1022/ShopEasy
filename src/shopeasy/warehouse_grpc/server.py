@@ -6,8 +6,7 @@ Lagerdaten liegen in `lager.py`.
 
 TODO:
 - Zustand erfassen und speichern, Fehlercodes: NOT_FOUND (unbekannte Retouren-ID),
-  FAILED_PRECONDITION (Pruefung vor Wareneingang), ALREADY_EXISTS (doppelter Scan),
-  INVALID_ARGUMENT (Zustand fehlt)
+  FAILED_PRECONDITION (Pruefung vor Wareneingang), INVALID_ARGUMENT (Zustand fehlt)
 - nach Erfolg Events publizieren: ware.eingegangen, pruefung.abgeschlossen
 """
 
@@ -68,9 +67,13 @@ class WarehouseService(warehouse_pb2_grpc.WarehouseServiceServicer):
             )
         storniert = retoure.status == RetourenStatus.STORNIERT
 
-        wareneingang = lager.wareneingang_erfassen(
-            retouren_id, scanner_id, eingang, already_cancelled=storniert
-        )
+        try:
+            wareneingang = lager.wareneingang_erfassen(
+                retouren_id, scanner_id, eingang, already_cancelled=storniert
+            )
+        except lager.WareneingangExistiert as fehler:
+            # Doppelter Scan: der erste Eintrag bleibt, Status und Historie auch
+            context.abort(grpc.StatusCode.ALREADY_EXISTS, str(fehler))
         if not storniert:
             retourenakte.status_setzen(
                 retouren_id,

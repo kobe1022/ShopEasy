@@ -33,6 +33,17 @@ CREATE TABLE IF NOT EXISTS wareneingang (
 """
 
 
+class WareneingangExistiert(Exception):
+    """Zu dieser Retoure wurde schon ein Wareneingang erfasst (gRPC: ALREADY_EXISTS)."""
+
+    def __init__(self, bestehender: Wareneingang) -> None:
+        super().__init__(
+            f"Wareneingang zu {bestehender.retouren_id} schon erfasst"
+            f" ({bestehender.eingang_am}, Scanner {bestehender.scanner_id})"
+        )
+        self.bestehender = bestehender
+
+
 @dataclass(frozen=True)
 class Wareneingang:
     retouren_id: str
@@ -72,7 +83,9 @@ def wareneingang_erfassen(
     """Speichert den Wareneingang und berechnet die Pruefungsfrist (24 h).
 
     Soll-BPMN: "Wareneingang registrieren, Pruefrist setzen". Die Retoure muss
-    in der Retourenakte existieren (Fremdschluessel).
+    in der Retourenakte existieren (Fremdschluessel). Wirft
+    `WareneingangExistiert`, wenn es zu ihr schon einen Wareneingang gibt: ein
+    doppelter Scan aendert nichts am ersten Eintrag.
     """
     eintrag = Wareneingang(
         retouren_id=retouren_id,
@@ -82,6 +95,9 @@ def wareneingang_erfassen(
         already_cancelled=already_cancelled,
     )
     with _transaktion(db_path) as conn:
+        bestehender = _lade_wareneingang(conn, retouren_id)
+        if bestehender is not None:
+            raise WareneingangExistiert(bestehender)
         conn.execute(
             "INSERT INTO wareneingang (retouren_id, scanner_id, eingang_am,"
             " pruef_frist, already_cancelled) VALUES (?, ?, ?, ?, ?)",
@@ -96,14 +112,12 @@ def wareneingang_erfassen(
     return eintrag
 
 
-def wareneingang_holen(
-    retouren_id: str, db_path: str | Path | None = None
+def _lade_wareneingang(
+    conn: sqlite3.Connection, retouren_id: str
 ) -> Wareneingang | None:
-    """Liefert den erfassten Wareneingang oder None."""
-    with closing(_verbinden(db_path)) as conn:
-        zeile = conn.execute(
-            "SELECT * FROM wareneingang WHERE retouren_id = ?", (retouren_id,)
-        ).fetchone()
+    zeile = conn.execute(
+        "SELECT * FROM wareneingang WHERE retouren_id = ?", (retouren_id,)
+    ).fetchone()
     if zeile is None:
         return None
     return Wareneingang(
@@ -113,3 +127,11 @@ def wareneingang_holen(
         pruef_frist=zeile["pruef_frist"],
         already_cancelled=bool(zeile["already_cancelled"]),
     )
+
+
+def wareneingang_holen(
+    retouren_id: str, db_path: str | Path | None = None
+) -> Wareneingang | None:
+    """Liefert den erfassten Wareneingang oder None."""
+    with closing(_verbinden(db_path)) as conn:
+        return _lade_wareneingang(conn, retouren_id)
