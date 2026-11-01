@@ -55,3 +55,13 @@ def test_erstattungsbetrag_mit_zwei_nachkommastellen(retoure):
     _, text = kundeninfo.mail_inhalt(event)
 
     assert "19.90 EUR" in text
+
+
+def test_empfaenger_kommt_aus_der_retourenakte(retoure):
+    assert kundeninfo.empfaenger(retoure.retouren_id) == "kundin@example.com"
+
+
+def test_unbekannte_retoure_wirft_fehler(retoure):
+    # Der Fehler sorgt im Consumer fuer ein Nack -> Dead-Letter-Queue
+    with pytest.raises(LookupError):
+        kundeninfo.empfaenger("RET-2026-999999")
