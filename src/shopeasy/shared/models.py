@@ -77,6 +77,10 @@ class NeueRetoure(BaseModel):
     gemeldet_am: date | None = Field(
         default=None, description="Datum der Anmeldung beim Kanal (fuer Fristpruefung)"
     )
+    geliefert_am: date | None = Field(
+        default=None,
+        description="Lieferdatum der Bestellung, Beginn der Rueckgabefrist",
+    )
 
     @model_validator(mode="after")
     def _marktplatz_braucht_externe_id(self) -> Self:

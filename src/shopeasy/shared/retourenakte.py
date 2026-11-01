@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS retouren (
     kunde_email     TEXT NOT NULL,
     grund_text      TEXT NOT NULL,
     gemeldet_am     TEXT,
+    geliefert_am    TEXT,
     status          TEXT NOT NULL,
     angelegt_am     TEXT NOT NULL,
     aktualisiert_am TEXT NOT NULL,
@@ -69,6 +70,13 @@ CREATE TABLE IF NOT EXISTS id_zaehler (
 """
 
 
+# Spalten, die nach der ersten Version dazugekommen sind. Bestehende Datenbanken
+# werden beim Oeffnen automatisch ergaenzt, niemand muss seine Akte loeschen.
+NACHGERUESTETE_SPALTEN: dict[str, str] = {
+    "geliefert_am": "TEXT",
+}
+
+
 class RetoureNichtGefunden(LookupError):
     def __init__(self, retouren_id: str) -> None:
         super().__init__(f"Retoure {retouren_id} nicht gefunden")
@@ -97,7 +105,15 @@ def verbinden(db_path: str | Path | None = None) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(SCHEMA)
+    _spalten_nachruesten(conn)
     return conn
+
+
+def _spalten_nachruesten(conn: sqlite3.Connection) -> None:
+    vorhanden = {z["name"] for z in conn.execute("PRAGMA table_info(retouren)")}
+    for spalte, typ in NACHGERUESTETE_SPALTEN.items():
+        if spalte not in vorhanden:
+            conn.execute(f"ALTER TABLE retouren ADD COLUMN {spalte} {typ}")
 
 
 @contextmanager
@@ -159,6 +175,9 @@ def _lade(conn: sqlite3.Connection, retouren_id: str) -> Retoure | None:
         gemeldet_am=(
             date.fromisoformat(zeile["gemeldet_am"]) if zeile["gemeldet_am"] else None
         ),
+        geliefert_am=(
+            date.fromisoformat(zeile["geliefert_am"]) if zeile["geliefert_am"] else None
+        ),
         artikel=[Artikel(sku=a["sku"], menge=a["menge"]) for a in artikel],
         status=RetourenStatus(zeile["status"]),
         angelegt_am=zeile["angelegt_am"],
@@ -190,9 +209,9 @@ def anlegen(
         conn.execute(
             """
             INSERT INTO retouren (retouren_id, kanal, externe_id, bestell_nr,
-                kunde_email, grund_text, gemeldet_am, status, angelegt_am,
-                aktualisiert_am)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                kunde_email, grund_text, gemeldet_am, geliefert_am, status,
+                angelegt_am, aktualisiert_am)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 retouren_id,
@@ -202,6 +221,7 @@ def anlegen(
                 neu.kunde_email,
                 neu.grund_text,
                 neu.gemeldet_am.isoformat() if neu.gemeldet_am else None,
+                neu.geliefert_am.isoformat() if neu.geliefert_am else None,
                 RetourenStatus.REGISTRIERT.value,
                 ts,
                 ts,
