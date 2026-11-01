@@ -86,7 +86,9 @@ def create_return(anmeldung: WebshopAnmeldung):
     Soll-BPMN: "Retoure ueber Webshop-Formular anmelden" ->
     "Retourenvorgang anlegen, Retouren-ID vergeben".
     """
-    return retourenakte.anlegen(anmeldung.als_neue_retoure(), quelle=QUELLE)
+    retoure = retourenakte.anlegen(anmeldung.als_neue_retoure(), quelle=QUELLE)
+    registriert_melden(retoure)
+    return retoure
 
 
 @app.post("/returns/marketplace/{marketplace}", status_code=201, response_model=Retoure)
@@ -116,7 +118,7 @@ def receive_marketplace_return(
         raise HTTPException(status_code=422, detail=str(fehler)) from fehler
 
     try:
-        return retourenakte.anlegen(neu, quelle=QUELLE)
+        retoure = retourenakte.anlegen(neu, quelle=QUELLE)
     except DubletteError as fehler:
         # Dieselbe Meldung kam schon einmal: keine zweite Retoure anlegen,
         # sondern die bestehende Retouren-ID zurueckmelden (Issue #11).
@@ -127,6 +129,8 @@ def receive_marketplace_return(
                 "retouren_id": fehler.bestehende_id,
             },
         ) from fehler
+    registriert_melden(retoure)
+    return retoure
 
 
 @app.post("/returns/poll", response_model=PollErgebnis)
@@ -164,6 +168,7 @@ def poll_marketplaces():
             else:
                 eintrag.retouren_id = retoure.retouren_id
                 ergebnis.angelegt.append(eintrag)
+                registriert_melden(retoure)
 
             try:
                 marktplatz_client.quittieren(marketplace, externe_id)
