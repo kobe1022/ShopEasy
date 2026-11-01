@@ -5,7 +5,8 @@ spaeteren Sprints wiederverwendet:
 
 - Normalfall innerhalb der Frist: AMZ-RET-001001, ZRET-2026-001001
   -> Happy Path (Sprint 4)
-- Rueckgabefrist (30 Tage) ueberschritten: AMZ-RET-001002
+- Rueckgabefrist ueberschritten (58 Tage nach Lieferung; wie lang die Frist ist,
+  legt die Aufgabe nicht fest): AMZ-RET-001002
   -> DMN "Berechtigung und Missbrauchsrisiko bewerten" (Sprint 4)
 - Unklarer Freitext-Retourengrund: ZRET-2026-001002
   -> KI-Agent mit n8n (Sprint 5)
@@ -36,7 +37,7 @@ def amazon_testdaten() -> list[AmazonReturn]:
             requestedAt="2026-10-28T10:15:00Z",
             items=[{"sku": "PULLI-BLAU-M", "quantity": 1}],
         ),
-        # Rueckgabefrist ueberschritten: 58 Tage nach Lieferung
+        # Rueckgabefrist ueberschritten: 58 Tage nach Lieferung (Fristlaenge offen)
         AmazonReturn(
             returnId="AMZ-RET-001002",
             orderId="ORD-099120",
