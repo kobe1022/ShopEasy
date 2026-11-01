@@ -61,9 +61,20 @@ def list_returns(marketplace: Marketplace, status: StatusFilter = "new"):
     return [m for m in meldungen if _status(m) == gesucht]
 
 
-@app.get("/{marketplace}/returns/{return_id}")
+def _meldung_oder_404(marketplace: str, return_id: str) -> Meldung:
+    meldung = MELDUNGEN[marketplace].get(return_id)
+    if meldung is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Meldung {return_id} bei {marketplace} nicht gefunden",
+        )
+    return meldung
+
+
+@app.get("/{marketplace}/returns/{return_id}", response_model=Meldung)
 def get_return(marketplace: Marketplace, return_id: str):
-    raise _not_implemented()
+    """Einzelne Retourenmeldung abrufen (404, wenn es sie nicht gibt)."""
+    return _meldung_oder_404(marketplace, return_id)
 
 
 @app.post("/{marketplace}/returns/{return_id}/ack")
