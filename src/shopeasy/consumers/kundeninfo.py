@@ -7,7 +7,65 @@ Mailtext je Event-Typ. Doppelt zugestellte Events ignoriert `shared.broker.consu
 from loguru import logger
 
 from shopeasy.shared.broker import consume
-from shopeasy.shared.events import Event
+from shopeasy.shared.events import Event, EventType
+
+# Betreff und Text je Event-Typ. Platzhalter in {} werden mit den Feldern aus
+# dem Payload gefuellt (z.B. {tracking_nr}), {retouren_id} gibt es immer.
+MAIL_TEXTE: dict[EventType, tuple[str, str]] = {
+    EventType.RETOURE_REGISTRIERT: (
+        "Wir haben deine Retoure erhalten",
+        (
+            "deine Retoure {retouren_id} ist bei uns angemeldet. "
+            "Das Ruecksendelabel bekommst du in einer eigenen Mail."
+        ),
+    ),
+    EventType.RETOURE_ABGELEHNT: (
+        "Deine Retoure wurde abgelehnt",
+        (
+            "leider koennen wir deine Retoure {retouren_id} nicht annehmen. "
+            "Grund: {grund}."
+        ),
+    ),
+    EventType.LABEL_BEREITGESTELLT: (
+        "Dein Ruecksendelabel ist da",
+        (
+            "fuer deine Retoure {retouren_id} steht das Label bereit "
+            "({versanddienstleister}, Sendungsnummer {tracking_nr})."
+        ),
+    ),
+    EventType.RUECKSENDUNG_UNTERWEGS: (
+        "Dein Paket ist unterwegs",
+        (
+            "dein Paket zur Retoure {retouren_id} ist unterwegs zu uns "
+            "(Sendungsnummer {tracking_nr})."
+        ),
+    ),
+    EventType.WARE_EINGEGANGEN: (
+        "Dein Paket ist bei uns angekommen",
+        (
+            "deine Ruecksendung {retouren_id} ist im Lager eingegangen. "
+            "Wir pruefen die Ware jetzt."
+        ),
+    ),
+    EventType.RETOURE_ANGENOMMEN: (
+        "Deine Retoure wurde angenommen",
+        (
+            "die Pruefung deiner Retoure {retouren_id} ist abgeschlossen, "
+            "wir nehmen sie an. Die Erstattung folgt."
+        ),
+    ),
+    EventType.ERSTATTUNG_ABGESCHLOSSEN: (
+        "Deine Erstattung ist veranlasst",
+        (
+            "fuer deine Retoure {retouren_id} erstatten wir dir {betrag:.2f} EUR "
+            "(Art: {art})."
+        ),
+    ),
+    EventType.RETOURE_STORNIERT: (
+        "Deine Retoure wurde storniert",
+        "deine Retoure {retouren_id} ist storniert. Grund: {grund}.",
+    ),
+}
 
 
 def handle(event: Event) -> None:
