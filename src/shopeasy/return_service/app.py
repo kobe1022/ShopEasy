@@ -9,8 +9,15 @@ TODO (siehe docs/sprint2-plan.md, Abschnitt 3.2):
 - Event retoure.registriert publizieren (shopeasy.shared.broker.publish)
 """
 
+from typing import Literal
+
 from fastapi import FastAPI, HTTPException
 
+from shopeasy.marketplace_mock.formate import AmazonReturn, ZalandoReturn
+from shopeasy.return_service.normalisierung import (
+    amazon_zu_neue_retoure,
+    zalando_zu_neue_retoure,
+)
 from shopeasy.return_service.schemas import RetoureMitHistorie, WebshopAnmeldung
 from shopeasy.shared import retourenakte
 from shopeasy.shared.models import Retoure
@@ -37,6 +44,27 @@ def create_return(anmeldung: WebshopAnmeldung):
     "Retourenvorgang anlegen, Retouren-ID vergeben".
     """
     return retourenakte.anlegen(anmeldung.als_neue_retoure(), quelle=QUELLE)
+
+
+@app.post("/returns/marketplace/{marketplace}", status_code=201, response_model=Retoure)
+def receive_marketplace_return(
+    marketplace: Literal["amazon", "zalando"], meldung: AmazonReturn | ZalandoReturn
+):
+    """Marktplatz-Meldung entgegennehmen (Webhook, Push statt Polling).
+
+    Soll-BPMN: Start "Marktplatz-Meldung eingegangen (REST)" ->
+    "Retourenvorgang anlegen, Retouren-ID vergeben". Die Meldung wird zuerst in
+    das einheitliche Modell uebersetzt (Issue #9).
+    """
+    if marketplace == "amazon" and isinstance(meldung, AmazonReturn):
+        neu = amazon_zu_neue_retoure(meldung)
+    elif marketplace == "zalando" and isinstance(meldung, ZalandoReturn):
+        neu = zalando_zu_neue_retoure(meldung)
+    else:
+        raise HTTPException(
+            status_code=422, detail=f"Meldung ist nicht im {marketplace}-Format"
+        )
+    return retourenakte.anlegen(neu, quelle=QUELLE)
 
 
 @app.post("/returns/poll")
