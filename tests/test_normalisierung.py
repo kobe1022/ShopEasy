@@ -4,10 +4,13 @@ from datetime import date
 
 import pytest
 
+from shopeasy.marketplace_mock.formate import ZalandoReturn
 from shopeasy.marketplace_mock.testdaten import amazon_testdaten, zalando_testdaten
 from shopeasy.return_service.artikelstamm import UnbekannteEAN, sku_fuer_ean
 from shopeasy.return_service.normalisierung import (
+    MeldungNichtUebersetzbar,
     amazon_zu_neue_retoure,
+    uebersetzen,
     zalando_zu_neue_retoure,
 )
 from shopeasy.shared.models import Kanal
@@ -75,3 +78,36 @@ def test_vielretournierer_kanaluebergreifend_erkennbar():
     ]
     assert len(vielretournierer) == 3
     assert {r.kanal for r in vielretournierer} == {Kanal.AMAZON, Kanal.ZALANDO}
+
+
+# --- uebersetzen: ein einheitlicher Fehlerfall ------------------------------
+
+
+def test_uebersetzen_gueltige_meldung():
+    retoure = uebersetzen("amazon", amazon_testdaten()[0])
+    assert retoure.externe_id == "AMZ-RET-001001"
+
+
+def test_uebersetzen_ungueltige_email():
+    meldung = amazon_testdaten()[0].model_copy(update={"buyerEmail": "keine-mail"})
+    with pytest.raises(MeldungNichtUebersetzbar, match="kunde_email"):
+        uebersetzen("amazon", meldung)
+
+
+def test_uebersetzen_unmoegliches_datum():
+    daten = zalando_testdaten()[0].model_dump()
+    daten["announced_on"] = "31.02.2026"
+    with pytest.raises(MeldungNichtUebersetzbar, match="31.02.2026"):
+        uebersetzen("zalando", ZalandoReturn(**daten))
+
+
+def test_uebersetzen_unbekannte_ean():
+    daten = zalando_testdaten()[0].model_dump()
+    daten["articles"][0]["ean"] = "9999999999999"
+    with pytest.raises(MeldungNichtUebersetzbar, match="9999999999999"):
+        uebersetzen("zalando", ZalandoReturn(**daten))
+
+
+def test_uebersetzen_falsches_format():
+    with pytest.raises(MeldungNichtUebersetzbar, match="zalando-Format"):
+        uebersetzen("zalando", amazon_testdaten()[0])

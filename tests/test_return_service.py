@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pika.exceptions import AMQPConnectionError
 
+from shopeasy.marketplace_mock.formate import ZalandoReturn
 from shopeasy.marketplace_mock.testdaten import amazon_testdaten, zalando_testdaten
 from shopeasy.return_service import marktplatz_client
 from shopeasy.return_service.app import app
@@ -185,3 +186,65 @@ def test_retoure_bleibt_angelegt_wenn_broker_nicht_erreichbar(client, monkeypatc
     assert antwort.status_code == 201
     retouren_id = antwort.json()["retouren_id"]
     assert client.get(f"/returns/{retouren_id}").status_code == 200
+
+
+# --- Ungueltige Marktplatz-Meldungen (#9, #11, #13) -------------------------
+
+
+def amazon_mit_ungueltiger_email():
+    return amazon_testdaten()[0].model_copy(
+        update={"returnId": "AMZ-RET-009001", "buyerEmail": "keine-mail"}
+    )
+
+
+def zalando_mit_unmoeglichem_datum():
+    daten = zalando_testdaten()[0].model_dump()
+    daten["id"] = "ZRET-2026-009001"
+    daten["order"]["delivered_on"] = "99.99.2026"
+    return ZalandoReturn(**daten)
+
+
+def test_webhook_ungueltige_email_ist_422(client, events):
+    antwort = client.post(
+        "/returns/marketplace/amazon",
+        json=amazon_mit_ungueltiger_email().model_dump(mode="json"),
+    )
+
+    assert antwort.status_code == 422
+    assert "kunde_email" in antwort.json()["detail"]
+    assert events == []
+
+
+def test_webhook_unmoegliches_datum_ist_422(client, events):
+    antwort = client.post(
+        "/returns/marketplace/zalando",
+        json=zalando_mit_unmoeglichem_datum().model_dump(mode="json"),
+    )
+
+    assert antwort.status_code == 422
+    assert "99.99.2026" in antwort.json()["detail"]
+    assert events == []
+
+
+def test_polling_ungueltige_meldungen_blockieren_die_anderen_nicht(
+    client, marktplatz, events
+):
+    schlecht_amazon = amazon_mit_ungueltiger_email()
+    schlecht_zalando = zalando_mit_unmoeglichem_datum()
+    marktplatz["amazon"][schlecht_amazon.returnId] = schlecht_amazon
+    marktplatz["zalando"][schlecht_zalando.id] = schlecht_zalando
+
+    antwort = client.post("/returns/poll")
+
+    assert antwort.status_code == 200
+    ergebnis = antwort.json()
+    assert sorted(m["externe_id"] for m in ergebnis["manuell_pruefen"]) == [
+        "AMZ-RET-009001",
+        "ZRET-2026-009001",
+    ]
+    assert "kunde_email" in ergebnis["manuell_pruefen"][0]["hinweis"]
+    assert len(ergebnis["angelegt"]) == 7  # alle gueltigen Testmeldungen
+    assert len(events) == 7
+    # die ungueltigen bleiben unquittiert beim Marktplatz liegen
+    assert list(marktplatz["amazon"]) == ["AMZ-RET-009001"]
+    assert list(marktplatz["zalando"]) == ["ZRET-2026-009001"]

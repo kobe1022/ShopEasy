@@ -7,10 +7,23 @@ weiteren Schritte nur noch ein Format kennen. Das behebt den Medienbruch aus S1.
 """
 
 from datetime import date, datetime
+from typing import Literal
+
+from pydantic import ValidationError
 
 from shopeasy.marketplace_mock.formate import AmazonReturn, ZalandoReturn
-from shopeasy.return_service.artikelstamm import sku_fuer_ean
+from shopeasy.return_service.artikelstamm import UnbekannteEAN, sku_fuer_ean
 from shopeasy.shared.models import Artikel, Kanal, NeueRetoure
+
+
+class MeldungNichtUebersetzbar(Exception):
+    """Die Meldung hat einen Inhalt, den das einheitliche Modell nicht annimmt.
+
+    Beispiele: ungueltige E-Mail-Adresse, unmoegliches Datum, unbekannte EAN.
+    Soll-BPMN: Solche Meldungen gehen in "Anmeldung pruefen und vervollstaendigen"
+    (manuelle Nacharbeit), sie duerfen weder den Service noch das Polling stoppen.
+    """
+
 
 # Amazon-Grundcodes in Klartext fuer Sachbearbeitung und KI-Agent (Sprint 5)
 AMAZON_GRUENDE: dict[str, str] = {
@@ -58,7 +71,12 @@ ZALANDO_GRUENDE: dict[int, str] = {
 
 def _datum_tt_mm_jjjj(text: str) -> date:
     """'28.10.2026' -> date(2026, 10, 28)."""
-    return datetime.strptime(text, "%d.%m.%Y").date()
+    try:
+        return datetime.strptime(text, "%d.%m.%Y").date()
+    except ValueError as fehler:
+        raise ValueError(
+            f"Datum '{text}' existiert nicht (Format TT.MM.JJJJ)"
+        ) from fehler
 
 
 def zalando_zu_neue_retoure(meldung: ZalandoReturn) -> NeueRetoure:
@@ -86,3 +104,32 @@ def zalando_zu_neue_retoure(meldung: ZalandoReturn) -> NeueRetoure:
         gemeldet_am=_datum_tt_mm_jjjj(meldung.announced_on),
         geliefert_am=_datum_tt_mm_jjjj(meldung.order.delivered_on),
     )
+
+
+def _fehlertext(fehler: Exception) -> str:
+    """Lesbarer Text fuer Sachbearbeitung statt der rohen Pydantic-Ausgabe."""
+    if isinstance(fehler, ValidationError):
+        return "; ".join(
+            f"{'.'.join(str(teil) for teil in e['loc'])}: {e['msg']}"
+            for e in fehler.errors()
+        )
+    return str(fehler)
+
+
+def uebersetzen(
+    marketplace: Literal["amazon", "zalando"], meldung: AmazonReturn | ZalandoReturn
+) -> NeueRetoure:
+    """Uebersetzt eine Meldung und meldet jeden inhaltlichen Fehler einheitlich.
+
+    Wirft `MeldungNichtUebersetzbar` (nie `ValueError`, `ValidationError` oder
+    `UnbekannteEAN`), damit Webhook und Polling nur einen Fehlerfall kennen.
+    """
+    try:
+        if marketplace == "amazon" and isinstance(meldung, AmazonReturn):
+            return amazon_zu_neue_retoure(meldung)
+        if marketplace == "zalando" and isinstance(meldung, ZalandoReturn):
+            return zalando_zu_neue_retoure(meldung)
+    except (UnbekannteEAN, ValueError) as fehler:
+        # ValidationError ist ein ValueError
+        raise MeldungNichtUebersetzbar(_fehlertext(fehler)) from fehler
+    raise MeldungNichtUebersetzbar(f"Meldung ist nicht im {marketplace}-Format")

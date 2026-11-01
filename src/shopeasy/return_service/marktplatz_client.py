@@ -8,7 +8,8 @@ aus `config.MARKETPLACE_MOCK_URL` und kann fuer Tests ueberschrieben werden.
 from typing import Literal
 
 import httpx
-from pydantic import TypeAdapter
+from loguru import logger
+from pydantic import TypeAdapter, ValidationError
 
 from shopeasy.marketplace_mock.formate import AmazonReturn, ZalandoReturn
 from shopeasy.shared import config
@@ -18,9 +19,9 @@ MARKETPLACES: tuple[Marketplace, ...] = ("amazon", "zalando")
 
 TIMEOUT_SEKUNDEN = 5.0
 
-_FORMAT: dict[str, TypeAdapter] = {
-    "amazon": TypeAdapter(list[AmazonReturn]),
-    "zalando": TypeAdapter(list[ZalandoReturn]),
+_EINZELFORMAT: dict[str, TypeAdapter] = {
+    "amazon": TypeAdapter(AmazonReturn),
+    "zalando": TypeAdapter(ZalandoReturn),
 }
 
 
@@ -44,7 +45,32 @@ def hole_neue_meldungen(
             antwort.raise_for_status()
     except httpx.HTTPError as fehler:
         raise MarktplatzNichtErreichbar(f"{marketplace}: {fehler}") from fehler
-    return _FORMAT[marketplace].validate_python(antwort.json())
+    try:
+        rohdaten = antwort.json()
+    except ValueError as fehler:
+        raise MarktplatzNichtErreichbar(
+            f"{marketplace}: Antwort ist kein JSON"
+        ) from fehler
+    if not isinstance(rohdaten, list):
+        raise MarktplatzNichtErreichbar(f"{marketplace}: Antwort ist keine Liste")
+
+    # Jede Meldung einzeln pruefen: eine kaputte darf die anderen nicht blockieren.
+    # Sie bleibt beim Marktplatz unquittiert und wird im Log gemeldet.
+    meldungen = []
+    for roh in rohdaten:
+        try:
+            meldungen.append(_EINZELFORMAT[marketplace].validate_python(roh))
+        except ValidationError as fehler:
+            meldungs_id = (
+                roh.get("returnId") or roh.get("id") if isinstance(roh, dict) else None
+            )
+            logger.warning(
+                "{}: Meldung {} uebersprungen, ungueltiges Format: {}",
+                marketplace,
+                meldungs_id or "ohne ID",
+                fehler.error_count(),
+            )
+    return meldungen
 
 
 def quittieren(

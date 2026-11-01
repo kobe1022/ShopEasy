@@ -20,14 +20,13 @@ from pika.exceptions import AMQPError
 
 from shopeasy.marketplace_mock.formate import AmazonReturn, ZalandoReturn
 from shopeasy.return_service import marktplatz_client
-from shopeasy.return_service.artikelstamm import UnbekannteEAN
 from shopeasy.return_service.marktplatz_client import (
     MARKETPLACES,
     MarktplatzNichtErreichbar,
 )
 from shopeasy.return_service.normalisierung import (
-    amazon_zu_neue_retoure,
-    zalando_zu_neue_retoure,
+    MeldungNichtUebersetzbar,
+    uebersetzen,
 )
 from shopeasy.return_service.schemas import (
     PollEintrag,
@@ -41,8 +40,6 @@ from shopeasy.shared.models import Retoure
 from shopeasy.shared.retourenakte import DubletteError
 
 QUELLE = "retouren-service"
-
-UEBERSETZER = {"amazon": amazon_zu_neue_retoure, "zalando": zalando_zu_neue_retoure}
 
 app = FastAPI(title="ShopEasy Retouren-Service", version="0.1.0")
 
@@ -105,15 +102,8 @@ def receive_marketplace_return(
     422 falsches Format oder unbekannter Artikel.
     """
     try:
-        if marketplace == "amazon" and isinstance(meldung, AmazonReturn):
-            neu = amazon_zu_neue_retoure(meldung)
-        elif marketplace == "zalando" and isinstance(meldung, ZalandoReturn):
-            neu = zalando_zu_neue_retoure(meldung)
-        else:
-            raise HTTPException(
-                status_code=422, detail=f"Meldung ist nicht im {marketplace}-Format"
-            )
-    except UnbekannteEAN as fehler:
+        neu = uebersetzen(marketplace, meldung)
+    except MeldungNichtUebersetzbar as fehler:
         # Soll-BPMN: "Anmeldung pruefen und vervollstaendigen" (manuell)
         raise HTTPException(status_code=422, detail=str(fehler)) from fehler
 
@@ -155,9 +145,9 @@ def poll_marketplaces():
             )
             eintrag = PollEintrag(marketplace=marketplace, externe_id=externe_id)
             try:
-                neu = UEBERSETZER[marketplace](meldung)
+                neu = uebersetzen(marketplace, meldung)
                 retoure = retourenakte.anlegen(neu, quelle=QUELLE)
-            except UnbekannteEAN as fehler:
+            except MeldungNichtUebersetzbar as fehler:
                 eintrag.hinweis = str(fehler)
                 ergebnis.manuell_pruefen.append(eintrag)
                 continue  # nicht quittieren, Meldung bleibt beim Marktplatz offen
