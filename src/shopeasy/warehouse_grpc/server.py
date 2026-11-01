@@ -5,8 +5,6 @@ Die Retourenakte (`shopeasy.shared.retourenakte`) bleibt die Datenbasis, die
 Lagerdaten liegen in `lager.py`.
 
 TODO:
-- Zustand erfassen und speichern, Fehlercodes: NOT_FOUND (unbekannte Retouren-ID),
-  FAILED_PRECONDITION (Pruefung vor Wareneingang), INVALID_ARGUMENT (Zustand fehlt)
 - nach Erfolg Events publizieren: ware.eingegangen, pruefung.abgeschlossen
 """
 
@@ -17,7 +15,7 @@ import grpc
 from loguru import logger
 
 from shopeasy.shared import retourenakte
-from shopeasy.shared.models import RetourenStatus
+from shopeasy.shared.models import RetourenStatus, Zustand
 from shopeasy.warehouse.v1 import warehouse_pb2, warehouse_pb2_grpc
 from shopeasy.warehouse_grpc import lager
 
@@ -46,6 +44,17 @@ def _zeitpunkt(context, text: str) -> datetime:
     if zeit.tzinfo is None:
         zeit = zeit.replace(tzinfo=UTC)
     return zeit.astimezone(UTC)
+
+
+def _zustand(context, wert: int) -> Zustand:
+    """Wandelt die Proto-Enum in den Zustand um; "nicht angegeben" ist ein Fehler."""
+    try:
+        name = warehouse_pb2.Condition.Name(wert)
+    except ValueError:
+        context.abort(grpc.StatusCode.INVALID_ARGUMENT, f"Unbekannter Zustand: {wert}")
+    if wert == warehouse_pb2.CONDITION_UNSPECIFIED:
+        context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Zustand fehlt")
+    return Zustand(name)
 
 
 class WarehouseService(warehouse_pb2_grpc.WarehouseServiceServicer):
@@ -94,7 +103,54 @@ class WarehouseService(warehouse_pb2_grpc.WarehouseServiceServicer):
         )
 
     def RecordInspection(self, request, context):
-        context.abort(grpc.StatusCode.UNIMPLEMENTED, "noch nicht implementiert")
+        """Zustand erfassen und im WMS speichern (Soll-BPMN).
+
+        Voraussetzung ist ein registrierter Wareneingang. Eine stornierte Retoure
+        wird erst geprueft, wenn der Workflow sie wieder geoeffnet hat.
+        """
+        retouren_id = _pflichtfeld(context, request.retouren_id, "retouren_id")
+        zustand = _zustand(context, request.condition)
+        pruefer = _pflichtfeld(context, request.inspector, "inspector")
+
+        retoure = retourenakte.holen(retouren_id)
+        if retoure is None:
+            context.abort(
+                grpc.StatusCode.NOT_FOUND, f"Retoure {retouren_id} nicht gefunden"
+            )
+        if lager.wareneingang_holen(retouren_id) is None:
+            context.abort(
+                grpc.StatusCode.FAILED_PRECONDITION,
+                f"Zu {retouren_id} wurde noch kein Wareneingang registriert",
+            )
+        if retoure.status == RetourenStatus.STORNIERT:
+            context.abort(
+                grpc.StatusCode.FAILED_PRECONDITION,
+                f"{retouren_id} ist storniert, erst die Wiedereroeffnung klaeren",
+            )
+
+        try:
+            pruefung = lager.pruefung_erfassen(
+                retouren_id,
+                zustand,
+                pruefer,
+                request.note,
+                list(request.photo_refs),
+                erfasst=datetime.now(UTC),
+            )
+        except lager.PruefungExistiert as fehler:
+            context.abort(grpc.StatusCode.ALREADY_EXISTS, str(fehler))
+        retourenakte.status_setzen(
+            retouren_id,
+            RetourenStatus.PRUEFUNG_ABGESCHLOSSEN,
+            quelle=QUELLE,
+            bemerkung=f"{zustand.value} durch {pruefer}",
+        )
+        logger.info("Pruefung {} erfasst: {}", retouren_id, zustand.value)
+        return warehouse_pb2.InspectionResponse(
+            retouren_id=retouren_id,
+            condition=warehouse_pb2.Condition.Value(pruefung.zustand.value),
+            recorded_at=pruefung.erfasst_am,
+        )
 
     def GetInspection(self, request, context):
         context.abort(grpc.StatusCode.UNIMPLEMENTED, "noch nicht implementiert")
