@@ -8,7 +8,8 @@ muss dafuer nicht laufen: ein Fake-Channel merkt sich nur Ack und Nack.
 
 import pytest
 
-from shopeasy.shared import broker
+from shopeasy.consumers import eventlog
+from shopeasy.shared import broker, config
 from shopeasy.shared.events import (
     Event,
     EventType,
@@ -54,3 +55,46 @@ def test_kaputtes_json_landet_in_der_dead_letter_queue(store):
     assert ok is False
     assert channel.nacks == [(1, False)]  # Nack OHNE Requeue -> retouren.dlq
     assert channel.acks == []
+
+
+def test_falscher_payload_landet_in_der_dead_letter_queue(store, monkeypatch, tmp_path):
+    # Event-Typ "pruefung.abgeschlossen", aber im Payload fehlt "condition"
+    monkeypatch.setattr(config, "EVENTLOG_PATH", str(tmp_path / "eventlog.csv"))
+    kaputt = Event(
+        event_type=EventType.PRUEFUNG_ABGESCHLOSSEN,
+        retouren_id="RET-2026-000001",
+        source="test",
+        payload={"inspector": "lager"},
+    )
+    channel = FakeChannel()
+
+    ok = broker.bestaetigen(
+        channel,
+        7,
+        "eventlog",
+        kaputt.model_dump_json().encode(),
+        eventlog.handle,
+        store,
+    )
+
+    assert ok is False
+    assert channel.nacks == [(7, False)]
+    assert not (tmp_path / "eventlog.csv").exists()  # nichts ins Event-Log
+
+
+def test_abgelehnte_nachricht_wird_nicht_als_verarbeitet_gemerkt(store):
+    event = gutes_event()
+
+    def handler_mit_fehler(_event):
+        raise RuntimeError("Datenbank weg")
+
+    broker.bestaetigen(
+        FakeChannel(),
+        1,
+        "eventlog",
+        event.model_dump_json().encode(),
+        handler_mit_fehler,
+        store,
+    )
+
+    assert not store.bereits_verarbeitet("eventlog", event.event_id)
