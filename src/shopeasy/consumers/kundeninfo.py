@@ -6,6 +6,7 @@ Mailtext je Event-Typ. Doppelt zugestellte Events ignoriert `shared.broker.consu
 
 from loguru import logger
 
+from shopeasy.shared import retourenakte
 from shopeasy.shared.broker import consume
 from shopeasy.shared.events import Event, EventType, parse_payload
 
@@ -78,6 +79,14 @@ def mail_inhalt(event: Event) -> tuple[str, str]:
     felder = parse_payload(event).model_dump()
     text = vorlage.format(retouren_id=event.retouren_id, **felder)
     return betreff, text
+
+
+def empfaenger(retouren_id: str) -> str:
+    """Holt die Mail-Adresse der Kundin aus der Retourenakte."""
+    retoure = retourenakte.holen(retouren_id)
+    if retoure is None:
+        raise LookupError(f"Retoure {retouren_id} nicht in der Retourenakte")
+    return retoure.kunde_email
 
 
 def handle(event: Event) -> None:
