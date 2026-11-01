@@ -42,10 +42,6 @@ def _status(meldung: Meldung) -> str:
     return meldung.status if isinstance(meldung, AmazonReturn) else meldung.state
 
 
-def _not_implemented() -> HTTPException:
-    return HTTPException(status_code=501, detail="noch nicht implementiert")
-
-
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -77,10 +73,20 @@ def get_return(marketplace: Marketplace, return_id: str):
     return _meldung_oder_404(marketplace, return_id)
 
 
-@app.post("/{marketplace}/returns/{return_id}/ack")
+@app.post("/{marketplace}/returns/{return_id}/ack", response_model=Meldung)
 def acknowledge_return(marketplace: Marketplace, return_id: str):
-    """Meldung als uebernommen quittieren."""
-    raise _not_implemented()
+    """Meldung als uebernommen quittieren.
+
+    Danach taucht sie bei ?status=new nicht mehr auf, der Retouren-Service holt
+    sie also kein zweites Mal ab. Mehrfaches Quittieren ist unschaedlich
+    (idempotent): der Status bleibt einfach "quittiert".
+    """
+    meldung = _meldung_oder_404(marketplace, return_id)
+    quittiert = STATUS_WERTE[marketplace]["acknowledged"]
+    feld = "status" if isinstance(meldung, AmazonReturn) else "state"
+    meldung = meldung.model_copy(update={feld: quittiert})
+    MELDUNGEN[marketplace][return_id] = meldung
+    return meldung
 
 
 BEISPIELE = {
