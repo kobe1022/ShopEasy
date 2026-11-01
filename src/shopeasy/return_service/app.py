@@ -15,6 +15,8 @@ Marktplatz-Formate werden in das einheitliche Modell uebersetzt
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
+from loguru import logger
+from pika.exceptions import AMQPError
 
 from shopeasy.marketplace_mock.formate import AmazonReturn, ZalandoReturn
 from shopeasy.return_service import marktplatz_client
@@ -33,7 +35,8 @@ from shopeasy.return_service.schemas import (
     RetoureMitHistorie,
     WebshopAnmeldung,
 )
-from shopeasy.shared import retourenakte
+from shopeasy.shared import broker, retourenakte
+from shopeasy.shared.events import EventType, RetoureRegistriertPayload, build_event
 from shopeasy.shared.models import Retoure
 from shopeasy.shared.retourenakte import DubletteError
 
@@ -42,6 +45,33 @@ QUELLE = "retouren-service"
 UEBERSETZER = {"amazon": amazon_zu_neue_retoure, "zalando": zalando_zu_neue_retoure}
 
 app = FastAPI(title="ShopEasy Retouren-Service", version="0.1.0")
+
+
+def registriert_melden(retoure: Retoure) -> None:
+    """Event retoure.registriert an den Message Broker senden (Issue #12).
+
+    Soll-BPMN: Zwischenereignis "Status: Retoure registriert". Kundeninfo und
+    Event-Log hoeren auf diese Nachricht (Consumer von Muhammed).
+
+    Ist RabbitMQ nicht erreichbar, bleibt die Retoure trotzdem angelegt; das
+    Event wird nur protokolliert. Bekannte Grenze des Prototyps, eine
+    Transactional Outbox wuerde das Event spaeter nachsenden.
+    """
+    payload = RetoureRegistriertPayload(
+        **retoure.model_dump(include=set(RetoureRegistriertPayload.model_fields))
+    )
+    event = build_event(
+        EventType.RETOURE_REGISTRIERT, retoure.retouren_id, QUELLE, payload
+    )
+    try:
+        broker.publish(event)
+    except (AMQPError, OSError) as fehler:
+        logger.warning(
+            "Event {} fuer {} nicht gesendet, Broker nicht erreichbar: {}",
+            event.event_type.value,
+            retoure.retouren_id,
+            fehler,
+        )
 
 
 @app.get("/health")
