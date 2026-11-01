@@ -9,6 +9,8 @@ Aufruf (RabbitMQ und der Event-Log-Consumer muessen laufen):
 Danach im RabbitMQ-UI (http://localhost:15672) unter Queues -> retouren.dlq ansehen.
 """
 
+import time
+
 import pika
 
 from shopeasy.shared import broker
@@ -36,5 +38,27 @@ def kaputte_nachricht_senden() -> None:
     print("Kaputte Nachricht gesendet (pruefung.abgeschlossen ohne 'condition').")
 
 
+def dead_letter_queue_anzeigen() -> None:
+    """Zeigt, was in retouren.dlq liegt, ohne die Nachrichten zu entfernen."""
+    with broker.connect() as connection:
+        channel = connection.channel()
+        anzahl = channel.queue_declare(broker.DEAD_LETTER_QUEUE, passive=True)
+        print(
+            f"In {broker.DEAD_LETTER_QUEUE} liegen {anzahl.method.message_count}"
+            " Nachricht(en):"
+        )
+        while True:
+            method, properties, body = channel.basic_get(broker.DEAD_LETTER_QUEUE)
+            if method is None:
+                break
+            # x-death: RabbitMQ notiert, aus welcher Queue und warum die Nachricht kam
+            for tod in (properties.headers or {}).get("x-death", []):
+                print(f"  aus Queue '{tod['queue']}', Grund: {tod['reason']}")
+            print(f"  Inhalt: {body.decode(errors='replace')}")
+        # Ohne Ack bleiben die Nachrichten beim Schliessen in der Queue liegen.
+
+
 if __name__ == "__main__":
     kaputte_nachricht_senden()
+    time.sleep(2)  # dem Consumer kurz Zeit geben, die Nachricht abzulehnen
+    dead_letter_queue_anzeigen()
