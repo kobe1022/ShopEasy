@@ -11,7 +11,7 @@ TODO (siehe docs/sprint2-plan.md, Abschnitt 3.2):
 
 from fastapi import FastAPI, HTTPException
 
-from shopeasy.return_service.schemas import WebshopAnmeldung
+from shopeasy.return_service.schemas import RetoureMitHistorie, WebshopAnmeldung
 from shopeasy.shared import retourenakte
 from shopeasy.shared.models import Retoure
 
@@ -45,7 +45,14 @@ def poll_marketplaces():
     raise _not_implemented()
 
 
-@app.get("/returns/{retouren_id}")
+@app.get("/returns/{retouren_id}", response_model=RetoureMitHistorie)
 def get_return(retouren_id: str):
-    """Status und Historie eines Retourenvorgangs."""
-    raise _not_implemented()
+    """Status und Historie eines Retourenvorgangs (404, wenn es ihn nicht gibt)."""
+    retoure = retourenakte.holen(retouren_id)
+    if retoure is None:
+        raise HTTPException(
+            status_code=404, detail=f"Retoure {retouren_id} nicht gefunden"
+        )
+    return RetoureMitHistorie(
+        **retoure.model_dump(), historie=retourenakte.historie(retouren_id)
+    )
