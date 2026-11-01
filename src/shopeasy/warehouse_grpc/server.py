@@ -153,7 +153,27 @@ class WarehouseService(warehouse_pb2_grpc.WarehouseServiceServicer):
         )
 
     def GetInspection(self, request, context):
-        context.abort(grpc.StatusCode.UNIMPLEMENTED, "noch nicht implementiert")
+        """Pruefergebnis zu einer Retoure abfragen.
+
+        NOT_FOUND gilt sowohl fuer eine unbekannte Retouren-ID als auch fuer eine
+        Retoure, die noch nicht geprueft wurde; die Meldung sagt, welcher Fall es ist.
+        """
+        retouren_id = _pflichtfeld(context, request.retouren_id, "retouren_id")
+        if retourenakte.holen(retouren_id) is None:
+            context.abort(
+                grpc.StatusCode.NOT_FOUND, f"Retoure {retouren_id} nicht gefunden"
+            )
+        pruefung = lager.pruefung_holen(retouren_id)
+        if pruefung is None:
+            context.abort(
+                grpc.StatusCode.NOT_FOUND,
+                f"Zu {retouren_id} liegt noch kein Pruefergebnis vor",
+            )
+        return warehouse_pb2.InspectionResponse(
+            retouren_id=retouren_id,
+            condition=warehouse_pb2.Condition.Value(pruefung.zustand.value),
+            recorded_at=pruefung.erfasst_am,
+        )
 
 
 def serve(address: str = "[::]:50051") -> None:
