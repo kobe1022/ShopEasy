@@ -1,6 +1,8 @@
-"""Tests fuer den Broker-Helper: Idempotenz (Issue #5)."""
+"""Tests fuer den Broker-Helper: Idempotenz (Issue #5) und Verbindungsaufbau."""
 
+import pika
 import pytest
+from pika.exceptions import AMQPConnectionError, StreamLostError
 
 from shopeasy.shared import broker
 from shopeasy.shared.events import (
@@ -91,3 +93,47 @@ def test_gemerkte_events_ueberleben_einen_neustart(tmp_path):
 def test_ungueltige_nachricht_wirft(store):
     with pytest.raises(ValueError):
         broker.verarbeiten("eventlog", b"kaputt", lambda e: None, store)
+
+
+# --- Verbindungsaufbau ------------------------------------------------------
+
+
+def test_connect_wiederholt_bis_der_broker_bereit_ist(monkeypatch):
+    versuche = []
+
+    def verbinden(parameter):
+        versuche.append(parameter)
+        if len(versuche) < 3:
+            raise StreamLostError("Transport indicated EOF")
+        return "verbindung"
+
+    monkeypatch.setattr(pika, "BlockingConnection", verbinden)
+    monkeypatch.setattr(broker.time, "sleep", lambda sekunden: None)
+
+    assert broker.connect(versuche=5, pause=0) == "verbindung"
+    assert len(versuche) == 3
+
+
+def test_connect_gibt_nach_den_versuchen_auf(monkeypatch):
+    versuche = []
+
+    def verbinden(parameter):
+        versuche.append(parameter)
+        raise AMQPConnectionError("nicht erreichbar")
+
+    monkeypatch.setattr(pika, "BlockingConnection", verbinden)
+    monkeypatch.setattr(broker.time, "sleep", lambda sekunden: None)
+
+    with pytest.raises(AMQPConnectionError):
+        broker.connect(versuche=3, pause=0)
+    assert len(versuche) == 3
+
+
+def test_connect_ohne_wiederholung_scheitert_sofort(monkeypatch):
+    def verbinden(parameter):
+        raise AMQPConnectionError("nicht erreichbar")
+
+    monkeypatch.setattr(pika, "BlockingConnection", verbinden)
+
+    with pytest.raises(AMQPConnectionError):
+        broker.connect()

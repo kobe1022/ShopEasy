@@ -1,6 +1,7 @@
 """RabbitMQ-Anbindung: Topologie, Publish-Helper und Consumer-Schleife."""
 
 import sqlite3
+import time
 from collections.abc import Callable
 from contextlib import closing
 from datetime import UTC, datetime
@@ -9,6 +10,7 @@ from pathlib import Path
 import pika
 from loguru import logger
 from pika.adapters.blocking_connection import BlockingChannel
+from pika.exceptions import AMQPConnectionError
 
 from shopeasy.shared import config
 from shopeasy.shared.events import Event
@@ -32,9 +34,32 @@ QUEUES: dict[str, list[str]] = {
     "eventlog": ["#"],
 }
 
+# Ein Sender soll nicht lange blockieren, ein Consumer darf auf den Broker warten.
+PUBLISH_VERSUCHE = 3
+PUBLISH_PAUSE_SEKUNDEN = 1.0
+CONSUME_VERSUCHE = 30
+CONSUME_PAUSE_SEKUNDEN = 2.0
 
-def connect() -> pika.BlockingConnection:
-    return pika.BlockingConnection(pika.URLParameters(config.RABBITMQ_URL))
+
+def connect(versuche: int = 1, pause: float = 2.0) -> pika.BlockingConnection:
+    """Verbindet mit RabbitMQ und wiederholt es, falls der Broker noch startet.
+
+    RabbitMQ meldet sich im Docker-Healthcheck schon, bevor der AMQP-Port
+    Verbindungen annimmt; ohne Wiederholung scheitert ein frisch gestarteter
+    Service oder Consumer genau in dieser Zeit.
+    """
+    versuch = 1
+    while True:
+        try:
+            return pika.BlockingConnection(pika.URLParameters(config.RABBITMQ_URL))
+        except (AMQPConnectionError, OSError) as fehler:
+            if versuch >= versuche:
+                raise
+            logger.warning(
+                "RabbitMQ nicht bereit ({}), Versuch {}/{}", fehler, versuch, versuche
+            )
+            versuch += 1
+            time.sleep(pause)
 
 
 def declare_topology(channel: BlockingChannel) -> None:
@@ -55,7 +80,7 @@ def declare_topology(channel: BlockingChannel) -> None:
 
 def publish(event: Event) -> None:
     """Publiziert ein Event persistent auf dem Topic-Exchange."""
-    with connect() as connection:
+    with connect(PUBLISH_VERSUCHE, PUBLISH_PAUSE_SEKUNDEN) as connection:
         channel = connection.channel()
         declare_topology(channel)
         channel.basic_publish(
@@ -146,7 +171,7 @@ def consume(
     zugestellte Events (gleiche `event_id`) werden nur bestaetigt.
     """
     store = store or VerarbeiteteEvents()
-    with connect() as connection:
+    with connect(CONSUME_VERSUCHE, CONSUME_PAUSE_SEKUNDEN) as connection:
         channel = connection.channel()
         declare_topology(channel)
         channel.basic_qos(prefetch_count=1)
