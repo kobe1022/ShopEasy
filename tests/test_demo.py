@@ -137,10 +137,14 @@ def test_eventlog_zeilen_ohne_datei(demo, monkeypatch, tmp_path):
     assert demo.eventlog_zeilen("RET-1") == []
 
 
-def lauf_mit_ausgabe(stdout: str, returncode: int = 0):
-    return lambda *args, **kwargs: subprocess.CompletedProcess(
-        args, returncode, stdout=stdout
-    )
+def docker_antwortet(ps: str, logs: str, returncode: int = 0):
+    """Fake fuer `docker compose ps -q` und `docker compose logs`."""
+
+    def lauf(argumente, **kwargs):
+        ausgabe = ps if "ps" in argumente else logs
+        return subprocess.CompletedProcess(argumente, returncode, stdout=ausgabe)
+
+    return lauf
 
 
 def test_status_mails_nur_der_gesuchten_retoure(demo, monkeypatch):
@@ -151,7 +155,7 @@ def test_status_mails_nur_der_gesuchten_retoure(demo, monkeypatch):
         " | Hallo, deine Retoure RET-2 ist da\n"
         "kundeninfo-1  | 11:00:02 | INFO | Consumer wartet auf Queue 'kundeninfo'\n"
     )
-    monkeypatch.setattr(subprocess, "run", lauf_mit_ausgabe(log))
+    monkeypatch.setattr(subprocess, "run", docker_antwortet("abc123\n", log))
 
     mails = demo.status_mails("RET-1")
 
@@ -169,6 +173,15 @@ def test_status_mails_ohne_docker_ist_none(demo, monkeypatch):
 
 
 def test_status_mails_bei_docker_fehler_ist_none(demo, monkeypatch):
-    monkeypatch.setattr(subprocess, "run", lauf_mit_ausgabe("", returncode=1))
+    monkeypatch.setattr(subprocess, "run", docker_antwortet("", "", returncode=1))
+
+    assert demo.status_mails("RET-1") is None
+
+
+def test_status_mails_wenn_der_dienst_nicht_in_docker_laeuft_ist_none(
+    demo, monkeypatch
+):
+    """Lokal gestartet: Docker findet keinen Container, also keine Fehlermeldung."""
+    monkeypatch.setattr(subprocess, "run", docker_antwortet("", ""))
 
     assert demo.status_mails("RET-1") is None

@@ -154,14 +154,11 @@ def eventlog_zeilen(retouren_id: str) -> list[dict[str, str]]:
         return [z for z in zeilen if z["case_id"] == retouren_id]
 
 
-def status_mails(retouren_id: str) -> list[str] | None:
-    """Liest die simulierten Status-Mails aus dem Log des Kundeninfo-Dienstes.
-
-    None, wenn Docker nicht erreichbar ist (dann ist nur die Anzeige nicht moeglich).
-    """
+def docker(*argumente: str) -> subprocess.CompletedProcess | None:
+    """Fuehrt `docker compose ...` im Projektordner aus (None = Docker nicht verfuegbar)."""
     try:
-        ergebnis = subprocess.run(
-            ["docker", "compose", "logs", "--no-color", "kundeninfo"],
+        return subprocess.run(
+            ["docker", "compose", *argumente],
             cwd=PROJEKT,
             capture_output=True,
             text=True,
@@ -171,7 +168,19 @@ def status_mails(retouren_id: str) -> list[str] | None:
         )
     except OSError, subprocess.TimeoutExpired:
         return None
-    if ergebnis.returncode != 0:
+
+
+def status_mails(retouren_id: str) -> list[str] | None:
+    """Liest die simulierten Status-Mails aus dem Log des Kundeninfo-Dienstes.
+
+    None, wenn sich die Mails so nicht lesen lassen: Docker fehlt oder der Dienst
+    laeuft nicht als Container (dann stehen die Mails im Terminal des Dienstes).
+    """
+    laeuft = docker("ps", "-q", "kundeninfo")
+    if laeuft is None or laeuft.returncode != 0 or not laeuft.stdout.strip():
+        return None
+    ergebnis = docker("logs", "--no-color", "kundeninfo")
+    if ergebnis is None or ergebnis.returncode != 0:
         return None
     return [
         zeile.split("Status-Mail an", 1)[1].strip()
@@ -334,7 +343,8 @@ def hauptfall(b: Bericht, http: httpx.Client, stub) -> tuple[str | None, Zalando
     mails = status_mails(retouren_id)
     if mails is None:
         b.zeige(
-            "(Status-Mails: Docker nicht erreichbar, bitte 'docker compose logs kundeninfo' ansehen)"
+            "(Status-Mails: Der Kundeninfo-Dienst laeuft nicht in Docker. Die Mails stehen "
+            "im Terminal des Dienstes, in Docker: 'docker compose logs kundeninfo')"
         )
     else:
         warte(lambda: len(status_mails(retouren_id) or []) >= 2)
