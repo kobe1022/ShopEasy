@@ -273,7 +273,8 @@ def test_pruefung_setzt_status_und_historie(lager):
 def test_alle_zustaende_werden_angenommen(lager, zustand):
     stub, _ = lager
 
-    antwort = pruefen(stub, retoure_mit_eingang(stub), zustand)
+    # bei einem Schaden ist ein Foto Pflicht, sonst kein Zustand ohne Foto
+    antwort = pruefen(stub, retoure_mit_eingang(stub), zustand, fotos=["foto.jpg"])
 
     assert antwort.condition == zustand
 
@@ -339,12 +340,77 @@ def test_zweite_pruefung_ist_already_exists_und_aendert_nichts(lager):
     pruefen(stub, retouren_id, warehouse_pb2.NEUWERTIG, pruefer="lager-01")
 
     code = fehlercode(
-        lambda: pruefen(stub, retouren_id, warehouse_pb2.BESCHAEDIGT, "lager-02")
+        lambda: pruefen(
+            stub,
+            retouren_id,
+            warehouse_pb2.BESCHAEDIGT,
+            "lager-02",
+            fotos=["foto.jpg"],
+        )
     )
 
     assert code == grpc.StatusCode.ALREADY_EXISTS
     gespeichert = lager_modul.pruefung_holen(retouren_id)
     assert (gespeichert.zustand, gespeichert.pruefer) == (Zustand.NEUWERTIG, "lager-01")
+
+
+# --- Fotopflicht bei Schaden (Soll-BPMN) ------------------------------------
+
+
+def test_schaden_ohne_foto_ist_invalid_argument(lager):
+    stub, gesendet = lager
+    retouren_id = retoure_mit_eingang(stub)
+    gesendet.clear()
+
+    with pytest.raises(grpc.RpcError) as fehler:
+        pruefen(stub, retouren_id, warehouse_pb2.BESCHAEDIGT)
+
+    assert fehler.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+    assert "Fotos Pflicht" in fehler.value.details()
+    assert lager_modul.pruefung_holen(retouren_id) is None  # nichts gespeichert
+    assert retourenakte.holen(retouren_id).status == RetourenStatus.WARE_EINGEGANGEN
+    assert gesendet == []
+
+
+def test_leere_fotoverweise_zaehlen_nicht(lager):
+    stub, _ = lager
+
+    code = fehlercode(
+        lambda: pruefen(
+            stub,
+            retoure_mit_eingang(stub),
+            warehouse_pb2.BESCHAEDIGT,
+            fotos=["", "   "],
+        )
+    )
+
+    assert code == grpc.StatusCode.INVALID_ARGUMENT
+
+
+def test_schaden_mit_foto_wird_gespeichert(lager):
+    stub, _ = lager
+    retouren_id = retoure_mit_eingang(stub)
+
+    pruefen(stub, retouren_id, warehouse_pb2.BESCHAEDIGT, fotos=["a.jpg", " ", "b.jpg"])
+
+    assert lager_modul.pruefung_holen(retouren_id).foto_refs == ("a.jpg", "b.jpg")
+
+
+@pytest.mark.parametrize(
+    "zustand",
+    [
+        warehouse_pb2.NEUWERTIG,
+        warehouse_pb2.GETRAGEN,
+        warehouse_pb2.UNVOLLSTAENDIG,
+        warehouse_pb2.FALSCHER_ARTIKEL,
+    ],
+)
+def test_ohne_schaden_ist_kein_foto_pflicht(lager, zustand):
+    stub, _ = lager
+
+    antwort = pruefen(stub, retoure_mit_eingang(stub), zustand)
+
+    assert antwort.condition == zustand
 
 
 # --- GetInspection (#18) ----------------------------------------------------

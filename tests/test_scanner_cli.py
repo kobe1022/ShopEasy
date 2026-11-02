@@ -92,10 +92,8 @@ def test_zustand_wird_auch_klein_geschrieben_akzeptiert(scanner):
     assert "Zustand NEUWERTIG" in out
 
 
-@pytest.mark.parametrize(
-    "zustand", ["BESCHAEDIGT", "UNVOLLSTAENDIG", "FALSCHER_ARTIKEL"]
-)
-def test_hinweis_auf_fotos_bei_schaeden(scanner, zustand):
+@pytest.mark.parametrize("zustand", ["UNVOLLSTAENDIG", "FALSCHER_ARTIKEL"])
+def test_hinweis_auf_fotos_bei_unklaren_faellen(scanner, zustand):
     retouren_id = neue_retoure()
     scanner("receive", retouren_id)
 
@@ -103,6 +101,20 @@ def test_hinweis_auf_fotos_bei_schaeden(scanner, zustand):
 
     assert code == scanner_cli.EXIT_OK  # nur ein Hinweis, keine Pflicht
     assert "Fotos beigefuegt werden" in err
+
+
+def test_schaden_ohne_foto_wird_abgelehnt(scanner):
+    """Soll-BPMN: Fotopflicht bei Schaden."""
+    retouren_id = neue_retoure()
+    scanner("receive", retouren_id)
+
+    code, out, err = scanner("inspect", retouren_id, "BESCHAEDIGT")
+
+    assert code == scanner_cli.EXIT_ABGELEHNT
+    assert out == ""
+    assert "Fotos Pflicht" in err and "--photo" in err
+    # nichts gespeichert: die Abfrage findet kein Pruefergebnis
+    assert scanner("get", retouren_id)[0] == scanner_cli.EXIT_ABGELEHNT
 
 
 def test_kein_fotohinweis_bei_neuwertiger_ware(scanner):

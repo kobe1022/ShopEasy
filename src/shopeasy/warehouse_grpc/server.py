@@ -146,11 +146,19 @@ class WarehouseService(warehouse_pb2_grpc.WarehouseServiceServicer):
         """Zustand erfassen und im WMS speichern (Soll-BPMN).
 
         Voraussetzung ist ein registrierter Wareneingang. Eine stornierte Retoure
-        wird erst geprueft, wenn der Workflow sie wieder geoeffnet hat.
+        wird erst geprueft, wenn der Workflow sie wieder geoeffnet hat. Bei einem
+        Schaden (BESCHAEDIGT) ist mindestens ein Foto Pflicht.
         """
         retouren_id = _pflichtfeld(context, request.retouren_id, "retouren_id")
         zustand = _zustand(context, request.condition)
         pruefer = _pflichtfeld(context, request.inspector, "inspector")
+        fotos = [foto.strip() for foto in request.photo_refs if foto.strip()]
+        if zustand == Zustand.BESCHAEDIGT and not fotos:
+            # Soll-BPMN: "Fotopflicht bei Schaden" (S3, nachvollziehbare Pruefung)
+            context.abort(
+                grpc.StatusCode.INVALID_ARGUMENT,
+                "Bei einem Schaden sind Fotos Pflicht (photo_refs)",
+            )
 
         retoure = retourenakte.holen(retouren_id)
         if retoure is None:
@@ -174,7 +182,7 @@ class WarehouseService(warehouse_pb2_grpc.WarehouseServiceServicer):
                 zustand,
                 pruefer,
                 request.note,
-                list(request.photo_refs),
+                fotos,
                 erfasst=datetime.now(UTC),
             )
         except lager.PruefungExistiert as fehler:

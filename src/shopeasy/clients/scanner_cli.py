@@ -23,8 +23,11 @@ EXIT_OK = 0
 EXIT_ABGELEHNT = 1
 EXIT_NICHT_ERREICHBAR = 2
 
-# Soll-BPMN: Bei Schaeden oder unklaren Faellen werden Fotos gemacht.
-ZUSTAENDE_MIT_FOTO = ("BESCHAEDIGT", "UNVOLLSTAENDIG", "FALSCHER_ARTIKEL")
+# Soll-BPMN: "Fotopflicht bei Schaden und Grenzfall". Bei einem Schaden verlangt
+# der Server mindestens ein Foto; bei den uebrigen Abweichungen (unklare Faelle)
+# weist die App darauf hin.
+FOTOPFLICHT = "BESCHAEDIGT"
+ZUSTAENDE_MIT_FOTOHINWEIS = ("UNVOLLSTAENDIG", "FALSCHER_ARTIKEL")
 
 # Was ein Statuscode fuer die Person am Scanner bedeutet
 FEHLERTITEL: dict[grpc.StatusCode, str] = {
@@ -125,7 +128,7 @@ def _aufrufen(args: argparse.Namespace, stub) -> str:
         )
         return formatiere_eingang(antwort)
     if args.command == "inspect":
-        if args.condition in ZUSTAENDE_MIT_FOTO and not args.photo:
+        if args.condition in ZUSTAENDE_MIT_FOTOHINWEIS and not args.photo:
             print(
                 f"Hinweis: Bei {args.condition} sollen Fotos beigefuegt werden"
                 " (--photo).",
@@ -151,6 +154,13 @@ def _aufrufen(args: argparse.Namespace, stub) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    if args.command == "inspect" and args.condition == FOTOPFLICHT and not args.photo:
+        # Gleiche Regel wie im Server, nur frueher und mit dem Namen der Option
+        print(
+            "Fehler: Bei einem Schaden sind Fotos Pflicht. Bitte --photo angeben.",
+            file=sys.stderr,
+        )
+        return EXIT_ABGELEHNT
     with grpc.insecure_channel(args.server) as channel:
         stub = warehouse_pb2_grpc.WarehouseServiceStub(channel)
         try:

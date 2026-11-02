@@ -57,7 +57,7 @@ lehnt der Event-Log-Consumer die Nachricht ab und sie landet in der Dead-Letter-
 - `artikel[]`: Liste aus `{ "sku": "PULLI-BLAU-M", "menge": 1 }`
 - `condition`: `NEUWERTIG`, `GETRAGEN`, `BESCHAEDIGT`, `UNVOLLSTAENDIG`, `FALSCHER_ARTIKEL`
   (gleiche Namen wie `Condition` in `warehouse.proto`, ohne `CONDITION_UNSPECIFIED`)
-- `photo_refs`: Liste von Verweisen auf Fotos bei Schäden oder unklaren Fällen
+- `photo_refs`: Liste von Verweisen auf Fotos. Bei `condition` = `BESCHAEDIGT` ist mindestens ein Eintrag Pflicht (Soll-BPMN: "Fotopflicht bei Schaden"), sonst bei unklaren Fällen sinnvoll
 - `pruef_frist`: 24 Stunden nach dem Wareneingang
 
 ### Beispiele
