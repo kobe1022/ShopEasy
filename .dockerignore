@@ -1,0 +1,13 @@
+# Nicht ins Image: lokale Umgebung, Daten, Caches, Tests
+.git
+.gitignore
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+data
+*.db
+*.csv
+tests
+docs

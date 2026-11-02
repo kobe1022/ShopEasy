@@ -1,5 +1,36 @@
-# Aufruf: docker compose up -d
-#         RabbitMQ-Oberflaeche: http://localhost:15672 (guest / guest)
+# Alles mit einem Befehl starten:
+#     docker compose up -d --build
+#
+# Danach erreichbar (vom eigenen Rechner aus):
+#     Mock-Marktplatz     http://127.0.0.1:8001/docs
+#     Retouren-Service    http://127.0.0.1:8002/docs
+#     gRPC-Wareneingang   127.0.0.1:50051
+#     RabbitMQ-Oberflaeche http://127.0.0.1:15672 (guest / guest)
+#     Event-Log (CSV)     ./data/eventlog.csv
+#
+# Status-Mails ansehen:   docker compose logs kundeninfo
+# Scanner-App (CLI):      uv run python -m shopeasy.clients.scanner_cli --help
+# Beenden:                docker compose down   (mit -v werden auch die Daten geloescht)
+
+# Gemeinsame Einstellungen aller Dienste, die das Image "shopeasy" nutzen.
+# Im Container heissen die anderen Dienste wie ihr Eintrag unten (z.B. rabbitmq).
+x-dienst: &dienst
+  build: .
+  image: shopeasy:latest
+  restart: on-failure
+  environment:
+    RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+    MARKETPLACE_MOCK_URL: http://marketplace-mock:8001
+    # Retourenakte und Liste der verarbeiteten Events: gemeinsames Volume
+    DB_PATH: /daten/retourenakte.db
+    IDEMPOTENZ_DB: /daten/verarbeitete_events.db
+    EVENTLOG_PATH: /ausgabe/eventlog.csv
+  volumes:
+    - daten:/daten
+  depends_on:
+    rabbitmq:
+      condition: service_healthy
+
 services:
   rabbitmq:
     image: rabbitmq:3-management
@@ -14,5 +45,56 @@ services:
       timeout: 5s
       retries: 5
 
+  marketplace-mock:
+    <<: *dienst
+    command: python -m uvicorn shopeasy.marketplace_mock.app:app --host 0.0.0.0 --port 8001
+    ports:
+      - "8001:8001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  return-service:
+    <<: *dienst
+    command: python -m uvicorn shopeasy.return_service.app:app --host 0.0.0.0 --port 8002
+    ports:
+      - "8002:8002"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      marketplace-mock:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  warehouse-grpc:
+    <<: *dienst
+    command: python -m shopeasy.warehouse_grpc
+    ports:
+      - "50051:50051"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 50051), 2)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  eventlog:
+    <<: *dienst
+    command: python -m shopeasy.consumers.eventlog
+    volumes:
+      - daten:/daten
+      # nur diese Datei landet auf dem eigenen Rechner (kein SQLite auf dem Bind-Mount)
+      - ./data:/ausgabe
+
+  kundeninfo:
+    <<: *dienst
+    command: python -m shopeasy.consumers.kundeninfo
+
 volumes:
   rabbitmq-data:
+  daten:
