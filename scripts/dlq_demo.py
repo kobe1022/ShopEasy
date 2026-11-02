@@ -1,12 +1,12 @@
-"""Demo-Fall Dead-Letter-Queue (Issue #22).
+"""Demo-Fall Fehler-Warteschlange (Issue #22).
 
 Schickt eine kaputte Nachricht an den Exchange `retouren.status`. Der Event-Log-
-Consumer kann sie nicht verarbeiten, lehnt sie ab (Nack ohne Requeue) und RabbitMQ
+Consumer kann sie nicht verarbeiten, lehnt sie ab (Nack ohne erneute Zustellung) und RabbitMQ
 schiebt sie in die Fehler-Warteschlange `retouren.dlq`. Sie geht also nicht verloren.
 
 Aufruf (RabbitMQ und der Event-Log-Consumer muessen laufen):
     uv run python scripts/dlq_demo.py
-Danach im RabbitMQ-UI (http://localhost:15672) unter Queues -> retouren.dlq ansehen.
+Danach im RabbitMQ-UI (http://localhost:15672) im Reiter "Queues" den Eintrag retouren.dlq ansehen.
 """
 
 import time
@@ -38,7 +38,7 @@ def kaputte_nachricht_senden() -> None:
     print("Kaputte Nachricht gesendet (pruefung.abgeschlossen ohne 'condition').")
 
 
-def dead_letter_queue_anzeigen() -> None:
+def fehler_warteschlange_anzeigen() -> None:
     """Zeigt, was in retouren.dlq liegt, ohne die Nachrichten zu entfernen."""
     with broker.connect() as connection:
         channel = connection.channel()
@@ -51,14 +51,14 @@ def dead_letter_queue_anzeigen() -> None:
             method, properties, body = channel.basic_get(broker.DEAD_LETTER_QUEUE)
             if method is None:
                 break
-            # x-death: RabbitMQ notiert, aus welcher Queue und warum die Nachricht kam
+            # x-death: RabbitMQ notiert, aus welcher Warteschlange und warum die Nachricht kam
             for tod in (properties.headers or {}).get("x-death", []):
-                print(f"  aus Queue '{tod['queue']}', Grund: {tod['reason']}")
+                print(f"  aus Warteschlange '{tod['queue']}', Grund: {tod['reason']}")
             print(f"  Inhalt: {body.decode(errors='replace')}")
-        # Ohne Ack bleiben die Nachrichten beim Schliessen in der Queue liegen.
+        # Ohne Ack bleiben die Nachrichten beim Schliessen in der Warteschlange liegen.
 
 
 if __name__ == "__main__":
     kaputte_nachricht_senden()
     time.sleep(2)  # dem Consumer kurz Zeit geben, die Nachricht abzulehnen
-    dead_letter_queue_anzeigen()
+    fehler_warteschlange_anzeigen()

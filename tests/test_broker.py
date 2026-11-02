@@ -55,7 +55,7 @@ def test_verschiedene_events_werden_beide_verarbeitet(store):
     assert len(gesehen) == 2
 
 
-def test_jede_queue_verarbeitet_das_event_einmal(store):
+def test_jede_warteschlange_verarbeitet_das_event_einmal(store):
     """Kundeninfo und Event-Log bekommen dasselbe Event, beide muessen es sehen."""
     kundeninfo, eventlog = [], []
     nachricht = als_nachricht(neues_event())

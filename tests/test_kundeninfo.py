@@ -73,7 +73,7 @@ def test_empfaenger_kommt_aus_der_retourenakte(retoure):
 
 
 def test_unbekannte_retoure_wirft_fehler(retoure):
-    # Der Fehler sorgt im Consumer fuer ein Nack -> Dead-Letter-Queue
+    # Der Fehler sorgt im Consumer fuer ein Nack -> Fehler-Warteschlange
     with pytest.raises(LookupError):
         kundeninfo.empfaenger("RET-2026-999999")
 

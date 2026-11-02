@@ -19,36 +19,36 @@ beschreibt sie. Änderungen bitte im Team absprechen, alle Services hängen dara
 }
 ```
 
-| Feld             | Bedeutung                                                      |
-| ---------------- | -------------------------------------------------------------- |
-| `event_id`       | UUID, Grundlage der Idempotenz (ein Event wird je Queue einmal verarbeitet) |
-| `event_type`     | Routing-Key, siehe unten                                       |
-| `retouren_id`    | Fall-ID (`RET-JJJJ-NNNNNN`), im Event-Log die `case_id`        |
-| `timestamp`      | UTC, Format `JJJJ-MM-TTThh:mm:ssZ`                             |
-| `source`         | Absender, z. B. `retouren-service`, `warehouse-grpc`           |
-| `schema_version` | derzeit 1                                                      |
-| `payload`        | Felder je Event-Typ, siehe unten                               |
+| Feld             | Bedeutung                                                                           |
+| ---------------- | ----------------------------------------------------------------------------------- |
+| `event_id`       | UUID, Grundlage der Idempotenz (ein Event wird je Warteschlange einmal verarbeitet) |
+| `event_type`     | Routing-Key, siehe unten                                                            |
+| `retouren_id`    | Fall-ID (`RET-JJJJ-NNNNNN`), im Event-Log die `case_id`                             |
+| `timestamp`      | UTC, Format `JJJJ-MM-TTThh:mm:ssZ`                                                  |
+| `source`         | Absender, z. B. `retouren-service`, `warehouse-grpc`                                |
+| `schema_version` | derzeit 1                                                                           |
+| `payload`        | Felder je Event-Typ, siehe unten                                                    |
 
 Alle Zeitangaben im Payload (z. B. `pruef_frist`) haben dasselbe Format wie `timestamp`.
 
 Sender bauen Events mit `build_event(...)`, das den Payload gegen das Modell prüft.
 Consumer lesen ihn mit `parse_payload(event)`. Passt ein Payload nicht zum Event-Typ,
-lehnt der Event-Log-Consumer die Nachricht ab und sie landet in der Dead-Letter-Queue
+lehnt der Event-Log-Consumer die Nachricht ab und sie landet in der Fehler-Warteschlange
 `retouren.dlq`.
 
 ## Event-Typen
 
-| Routing-Key                | Soll-BPMN (Status-Ereignis)       | Absender (Sprint 2)        | Payload                                                                                          |
-| -------------------------- | --------------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------ |
-| `retoure.registriert`      | Status: Retoure registriert       | Retouren-Service           | `kanal`, `externe_id`, `bestell_nr`, `kunde_email`, `grund_text`, `artikel[]`                    |
-| `retoure.abgelehnt`        | Status: Retoure abgelehnt         | Sprint 4 (Workflow)        | `grund`                                                                                          |
-| `label.bereitgestellt`     | Status: Label bereitgestellt      | Sprint 4 (Workflow)        | `tracking_nr`, `versanddienstleister`                                                            |
-| `ruecksendung.unterwegs`   | Status: Rücksendung unterwegs     | Sprint 4 (Workflow)        | `tracking_nr`                                                                                    |
-| `ware.eingegangen`         | Status: Ware eingegangen          | gRPC-Wareneingang          | `scanner_id`, `pruef_frist`, `already_cancelled` (Standard `false`)                              |
-| `pruefung.abgeschlossen`   | Prüfergebnis im WMS gespeichert   | gRPC-Wareneingang          | `condition`, `inspector`, `note` (Standard leer), `photo_refs` (Standard leer)                   |
-| `retoure.angenommen`       | Status: Retoure angenommen        | Sprint 4 (Workflow)        | `entschieden_durch` (z. B. `dmn` oder Kürzel der Sachbearbeitung)                                |
-| `erstattung.abgeschlossen` | Status: Erstattung abgeschlossen  | Sprint 4 (Workflow)        | `betrag` (≥ 0), `art` (`ZAHLUNG` oder `GUTSCHEIN`)                                               |
-| `retoure.storniert`        | Status: Retoure storniert         | Sprint 4 (Workflow)        | `grund`                                                                                          |
+| Routing-Key                | Soll-BPMN (Status-Ereignis)      | Absender (Sprint 2) | Payload                                                                        |
+| -------------------------- | -------------------------------- | ------------------- | ------------------------------------------------------------------------------ |
+| `retoure.registriert`      | Status: Retoure registriert      | Retouren-Service    | `kanal`, `externe_id`, `bestell_nr`, `kunde_email`, `grund_text`, `artikel[]`  |
+| `retoure.abgelehnt`        | Status: Retoure abgelehnt        | Sprint 4 (Workflow) | `grund`                                                                        |
+| `label.bereitgestellt`     | Status: Label bereitgestellt     | Sprint 4 (Workflow) | `tracking_nr`, `versanddienstleister`                                          |
+| `ruecksendung.unterwegs`   | Status: Rücksendung unterwegs    | Sprint 4 (Workflow) | `tracking_nr`                                                                  |
+| `ware.eingegangen`         | Status: Ware eingegangen         | gRPC-Wareneingang   | `scanner_id`, `pruef_frist`, `already_cancelled` (Standard `false`)            |
+| `pruefung.abgeschlossen`   | Prüfergebnis im WMS gespeichert  | gRPC-Wareneingang   | `condition`, `inspector`, `note` (Standard leer), `photo_refs` (Standard leer) |
+| `retoure.angenommen`       | Status: Retoure angenommen       | Sprint 4 (Workflow) | `entschieden_durch` (z. B. `dmn` oder Kürzel der Sachbearbeitung)              |
+| `erstattung.abgeschlossen` | Status: Erstattung abgeschlossen | Sprint 4 (Workflow) | `betrag` (≥ 0), `art` (`ZAHLUNG` oder `GUTSCHEIN`)                             |
+| `retoure.storniert`        | Status: Retoure storniert        | Sprint 4 (Workflow) | `grund`                                                                        |
 
 ### Wertebereiche
 
@@ -96,10 +96,10 @@ lehnt der Event-Log-Consumer die Nachricht ab und sie landet in der Dead-Letter-
 }
 ```
 
-## Queues
+## Warteschlangen
 
-| Queue        | Routing-Keys                                   | Consumer                       |
-| ------------ | ---------------------------------------------- | ------------------------------ |
-| `kundeninfo` | alle außer `pruefung.abgeschlossen`            | `consumers/kundeninfo.py`      |
-| `eventlog`   | `#` (alle)                                     | `consumers/eventlog.py`        |
-| `retouren.dlq` | nicht verarbeitbare Nachrichten              | manuell prüfen                 |
+| Warteschlange  | Routing-Keys                        | Consumer                  |
+| -------------- | ----------------------------------- | ------------------------- |
+| `kundeninfo`   | alle außer `pruefung.abgeschlossen` | `consumers/kundeninfo.py` |
+| `eventlog`     | `#` (alle)                          | `consumers/eventlog.py`   |
+| `retouren.dlq` | nicht verarbeitbare Nachrichten     | manuell prüfen            |

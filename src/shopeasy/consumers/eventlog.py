@@ -52,7 +52,7 @@ def append_event(event: Event, path: Path) -> None:
 
 def handle(event: Event) -> None:
     # Payload pruefen (Team-Vorgabe): passt er nicht zum Event-Typ, wirft
-    # parse_payload einen Fehler und die Nachricht landet in der Dead-Letter-Queue
+    # parse_payload einen Fehler und die Nachricht landet in der Fehler-Warteschlange
     # statt im Event-Log.
     parse_payload(event)
     append_event(event, Path(EVENTLOG_PATH))

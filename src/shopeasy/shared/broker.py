@@ -19,7 +19,8 @@ EXCHANGE = "retouren.status"
 DEAD_LETTER_EXCHANGE = "retouren.dlx"
 DEAD_LETTER_QUEUE = "retouren.dlq"
 
-# Queue -> Routing-Keys; jeder Consumer hat eine eigene Queue (Publish/Subscribe).
+# Warteschlange -> Routing-Keys; jeder Consumer hat eine eigene Warteschlange
+# (Publish/Subscribe).
 QUEUES: dict[str, list[str]] = {
     "kundeninfo": [
         "retoure.registriert",
@@ -63,7 +64,7 @@ def connect(versuche: int = 1, pause: float = 2.0) -> pika.BlockingConnection:
 
 
 def declare_topology(channel: BlockingChannel) -> None:
-    """Legt Exchanges, Queues und Dead-Letter-Queue an (idempotent)."""
+    """Legt Exchanges, Warteschlangen und Fehler-Warteschlange an (idempotent)."""
     channel.exchange_declare(EXCHANGE, exchange_type="topic", durable=True)
     channel.exchange_declare(DEAD_LETTER_EXCHANGE, exchange_type="fanout", durable=True)
     channel.queue_declare(DEAD_LETTER_QUEUE, durable=True)
@@ -97,7 +98,7 @@ def publish(event: Event) -> None:
 
 
 class VerarbeiteteEvents:
-    """Merkt sich je Queue, welche `event_id` schon verarbeitet wurde (Idempotenz).
+    """Merkt sich je Warteschlange, welche `event_id` schon verarbeitet wurde (Idempotenz).
 
     Der Broker stellt Nachrichten "mindestens einmal" zu. Kommt dasselbe Event
     ein zweites Mal (z.B. nach einem Verbindungsabbruch vor dem Ack), darf ein
@@ -171,15 +172,15 @@ def bestaetigen(
 
     Klappt die Verarbeitung (oder war das Event schon verarbeitet), gibt es ein
     Ack und die Nachricht ist erledigt. Bei jedem Fehler (ungueltiges JSON,
-    falscher Payload, Fehler im Handler) gibt es ein Nack ohne Requeue: RabbitMQ
-    schiebt die Nachricht dann ueber `retouren.dlx` in die Dead-Letter-Queue
+    falscher Payload, Fehler im Handler) gibt es ein Nack ohne erneute Zustellung: RabbitMQ
+    schiebt die Nachricht dann ueber `retouren.dlx` in die Fehler-Warteschlange
     `retouren.dlq`, statt sie zu verlieren oder endlos neu zuzustellen.
     Gibt True bei Ack und False bei Nack zurueck.
     """
     try:
         verarbeiten(queue, body, handler, store)
-    except Exception:  # noqa: BLE001 - jeder Fehler fuehrt zur Dead-Letter-Queue
-        logger.exception("Nachricht nicht verarbeitbar -> Dead-Letter-Queue")
+    except Exception:  # noqa: BLE001 - jeder Fehler fuehrt zur Fehler-Warteschlange
+        logger.exception("Nachricht nicht verarbeitbar -> Fehler-Warteschlange")
         channel.basic_nack(delivery_tag, requeue=False)
         return False
     channel.basic_ack(delivery_tag)
@@ -191,10 +192,10 @@ def consume(
     handler: Callable[[Event], None],
     store: VerarbeiteteEvents | None = None,
 ) -> None:
-    """Verarbeitet Nachrichten einer Queue mit manuellem Ack, jedes Event einmal.
+    """Verarbeitet Nachrichten einer Warteschlange mit manuellem Ack, jedes Event einmal.
 
     Nicht verarbeitbare Nachrichten (ungueltiges JSON, Fehler im Handler) werden
-    ohne Requeue abgelehnt und landen in der Dead-Letter-Queue. Doppelt
+    ohne erneute Zustellung abgelehnt und landen in der Fehler-Warteschlange. Doppelt
     zugestellte Events (gleiche `event_id`) werden nur bestaetigt.
     """
     store = store or VerarbeiteteEvents()
@@ -207,5 +208,5 @@ def consume(
             bestaetigen(ch, method.delivery_tag, queue, body, handler, store)
 
         channel.basic_consume(queue, on_message)
-        logger.info("Consumer wartet auf Queue '{}'", queue)
+        logger.info("Consumer wartet auf Warteschlange '{}'", queue)
         channel.start_consuming()

@@ -153,7 +153,7 @@ def test_status_mails_nur_der_gesuchten_retoure(demo, monkeypatch):
         " | Hallo, deine Retoure RET-1 ist da\n"
         "kundeninfo-1  | 11:00:01 | INFO | Status-Mail an c@d.de | Betreff: Y"
         " | Hallo, deine Retoure RET-2 ist da\n"
-        "kundeninfo-1  | 11:00:02 | INFO | Consumer wartet auf Queue 'kundeninfo'\n"
+        "kundeninfo-1  | 11:00:02 | INFO | Consumer wartet auf Warteschlange 'kundeninfo'\n"
     )
     monkeypatch.setattr(subprocess, "run", docker_antwortet("abc123\n", log))
 

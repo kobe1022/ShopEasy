@@ -1,8 +1,8 @@
-"""Tests fuer die Dead-Letter-Queue (Issue #22).
+"""Tests fuer die Fehler-Warteschlange (Issue #22).
 
 Eine kaputte Nachricht soll in `retouren.dlq` landen, statt verloren zu gehen.
 RabbitMQ macht das selbst, wenn der Consumer die Nachricht mit Nack ohne
-Requeue ablehnt. Hier wird geprueft, dass der Consumer genau das tut. RabbitMQ
+erneute Zustellung ablehnt. Hier wird geprueft, dass der Consumer genau das tut. RabbitMQ
 muss dafuer nicht laufen: ein Fake-Channel merkt sich nur Ack und Nack.
 """
 
@@ -47,17 +47,19 @@ def gutes_event() -> Event:
     )
 
 
-def test_kaputtes_json_landet_in_der_dead_letter_queue(store):
+def test_kaputtes_json_landet_in_der_fehler_warteschlange(store):
     channel = FakeChannel()
 
     ok = broker.bestaetigen(channel, 1, "eventlog", b"{kein json", print, store)
 
     assert ok is False
-    assert channel.nacks == [(1, False)]  # Nack OHNE Requeue -> retouren.dlq
+    assert channel.nacks == [(1, False)]  # Nack OHNE erneute Zustellung -> retouren.dlq
     assert channel.acks == []
 
 
-def test_falscher_payload_landet_in_der_dead_letter_queue(store, monkeypatch, tmp_path):
+def test_falscher_payload_landet_in_der_fehler_warteschlange(
+    store, monkeypatch, tmp_path
+):
     # Event-Typ "pruefung.abgeschlossen", aber im Payload fehlt "condition"
     monkeypatch.setattr(eventlog, "EVENTLOG_PATH", str(tmp_path / "eventlog.csv"))
     kaputt = Event(
@@ -108,13 +110,13 @@ def test_gute_und_doppelte_nachricht_werden_bestaetigt(store):
     broker.bestaetigen(channel, 2, "eventlog", nachricht, lambda e: None, store)
 
     # Auch das Duplikat bekommt ein Ack: es ist kein Fehler und gehoert nicht in
-    # die Dead-Letter-Queue.
+    # die Fehler-Warteschlange.
     assert channel.acks == [1, 2]
     assert channel.nacks == []
 
 
 class TopologieChannel:
-    """Merkt sich, welche Exchanges, Queues und Bindungen angelegt werden."""
+    """Merkt sich, welche Exchanges, Warteschlangen und Bindungen angelegt werden."""
 
     def __init__(self) -> None:
         self.queues: dict[str, dict] = {}
@@ -130,7 +132,7 @@ class TopologieChannel:
         self.bindungen.append((queue, exchange))
 
 
-def test_jede_queue_leitet_abgelehnte_nachrichten_in_die_dlq():
+def test_jede_warteschlange_leitet_abgelehnte_nachrichten_in_die_dlq():
     channel = TopologieChannel()
 
     broker.declare_topology(channel)

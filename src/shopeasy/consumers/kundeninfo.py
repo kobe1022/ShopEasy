@@ -1,6 +1,6 @@
 """Consumer Kundeninfo: simulierte Status-Mail im Log. Zustaendig: Muhammed.
 
-Bei jedem kundenrelevanten Event (Queue "kundeninfo") wird eine Status-Mail mit
+Bei jedem kundenrelevanten Event (Warteschlange "kundeninfo") wird eine Status-Mail mit
 passendem Text ins Log geschrieben. So muss die Kundin nicht nachfragen (KPI K14).
 Die Mail-Adresse kommt aus der Retourenakte (`retourenakte.holen`).
 Doppelt zugestellte Events ignoriert `shared.broker.consume`.
@@ -75,7 +75,7 @@ def mail_inhalt(event: Event) -> tuple[str, str]:
     """Liefert Betreff und Text der Status-Mail fuer ein Event.
 
     Der Payload wird mit `parse_payload` geprueft; passt er nicht zum Event-Typ,
-    gibt es einen Fehler und die Nachricht landet in der Dead-Letter-Queue.
+    gibt es einen Fehler und die Nachricht landet in der Fehler-Warteschlange.
     """
     betreff, vorlage = MAIL_TEXTE[event.event_type]
     felder = parse_payload(event).model_dump()

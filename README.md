@@ -57,8 +57,8 @@ Mock-Marktplatz --REST--> Retouren-Service --+
 Scanner-CLI --gRPC--> Wareneingangs-Service -+
                                              v
                           RabbitMQ, Exchange retouren.status (Topic)
-|  |
-                         Queue eventlog           Queue kundeninfo
+                                   |                         |
+                         Warteschlange eventlog   Warteschlange kundeninfo
                        -> data/eventlog.csv      -> simulierte Status-Mail
 ```
 
@@ -111,8 +111,8 @@ Events stehen in [docs/events.md](docs/events.md). Gesendet werden bisher
 `retoure.registriert` (Retouren-Service) sowie `ware.eingegangen` und
 `pruefung.abgeschlossen` (gRPC); die übrigen folgen mit dem Workflow in Sprint 4.
 Nachrichten sind persistent, werden erst nach erfolgreicher Verarbeitung bestätigt und über
-die `event_id` höchstens einmal je Queue verarbeitet. Nicht verarbeitbare Nachrichten landen
-in der Dead-Letter-Queue `retouren.dlq`.
+die `event_id` höchstens einmal je Warteschlange verarbeitet. Nicht verarbeitbare Nachrichten landen
+in der Fehler-Warteschlange `retouren.dlq` (englisch Dead-Letter-Queue).
 
 ## Wo im Soll-BPMN wird das genutzt?
 

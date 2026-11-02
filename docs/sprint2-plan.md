@@ -53,15 +53,15 @@ Topic-Exchange `retouren.status`, Routing-Keys siehe `shared/events.py`. Consume
   Datenbasis für Process Mining in Sprint 3.
 - Später (Sprint 4): Camunda-Bridge.
 
-Robustheit: durable Queues, persistente Nachrichten, manuelles Ack nach erfolgreicher
-Verarbeitung, Dead-Letter-Queue, idempotente Consumer über `event_id`.
+Robustheit: dauerhafte Warteschlangen, persistente Nachrichten, manuelles Ack nach erfolgreicher
+Verarbeitung, Fehler-Warteschlange, idempotente Consumer über `event_id`.
 
 ## 4. Demo fürs Review (gemeinsam)
 
 `scripts/demo.py`: Zalando-Retoure erzeugen, Retouren-Service holt sie ab, Scanner meldet
 Wareneingang, Scanner erfasst Zustand. Verlauf im RabbitMQ-UI, Event-Log und in den
 Status-Mails sichtbar. Fehlerfälle: Dublette (409), unbekannte Retouren-ID (`NOT_FOUND`),
-fehlerhafte Nachricht in der Dead-Letter-Queue.
+fehlerhafte Nachricht in der Fehler-Warteschlange.
 
 ## 5. Abgabe
 

@@ -74,7 +74,7 @@ def test_handle_schreibt_in_den_konfigurierten_pfad(tmp_path, monkeypatch):
 
 
 def test_ungueltiger_payload_wird_nicht_geloggt(tmp_path, monkeypatch):
-    """Faellt in der Praxis in die Dead-Letter-Queue (siehe broker.consume)."""
+    """Faellt in der Praxis in die Fehler-Warteschlange (siehe broker.consume)."""
     pfad = tmp_path / "eventlog.csv"
     monkeypatch.setattr(eventlog, "EVENTLOG_PATH", str(pfad))
     kaputt = Event(

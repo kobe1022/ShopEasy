@@ -205,9 +205,9 @@ def kaputte_nachricht_senden() -> None:
 
 
 def kaputte_nachricht_in_dlq() -> dict | None:
-    """Sucht unsere kaputte Nachricht in der Dead-Letter-Queue (None = nicht da).
+    """Sucht unsere kaputte Nachricht in der Fehler-Warteschlange (None = nicht da).
 
-    Die Nachrichten bleiben dabei in der Queue liegen (requeue).
+    Die Nachrichten bleiben dabei in der Warteschlange liegen (requeue).
     """
     try:
         antwort = httpx.post(
@@ -471,7 +471,7 @@ def fehlerfaelle(
         code,
     )
 
-    b.abschnitt("11. Fehlerfall: kaputte Nachricht im Broker (Dead-Letter-Queue)")
+    b.abschnitt("11. Fehlerfall: kaputte Nachricht im Broker (Fehler-Warteschlange)")
     b.zeige("Gesendet wird ein Pruefergebnis ohne Zustand ('condition' fehlt).")
     kaputte_nachricht_senden()
     gefunden: dict | None = None
@@ -489,12 +489,16 @@ def fehlerfaelle(
         tod = (
             gefunden.get("properties", {}).get("headers", {}).get("x-death") or [{}]
         )[0]
-        b.zeige(f"Abgelehnt von Queue '{tod.get('queue')}', Grund: {tod.get('reason')}")
+        b.zeige(
+            f"Abgelehnt von Warteschlange '{tod.get('queue')}', Grund: {tod.get('reason')}"
+        )
         b.zeige(
             "Die Nachricht ist nicht verloren: sie liegt in retouren.dlq und kann geprueft werden."
         )
     else:
-        b.zeige(f"(RabbitMQ-Oberflaeche: {RABBIT_UI} -> Queues -> retouren.dlq)")
+        b.zeige(
+            f"(RabbitMQ-Oberflaeche: {RABBIT_UI}, Reiter 'Queues', Eintrag retouren.dlq)"
+        )
 
 
 def main(argv: list[str] | None = None) -> int:
