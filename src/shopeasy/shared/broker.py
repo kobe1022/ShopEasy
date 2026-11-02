@@ -159,6 +159,33 @@ def verarbeiten(
     return True
 
 
+def bestaetigen(
+    channel: BlockingChannel,
+    delivery_tag: int,
+    queue: str,
+    body: bytes,
+    handler: Callable[[Event], None],
+    store: VerarbeiteteEvents,
+) -> bool:
+    """Verarbeitet eine Nachricht und bestaetigt sie danach beim Broker.
+
+    Klappt die Verarbeitung (oder war das Event schon verarbeitet), gibt es ein
+    Ack und die Nachricht ist erledigt. Bei jedem Fehler (ungueltiges JSON,
+    falscher Payload, Fehler im Handler) gibt es ein Nack ohne Requeue: RabbitMQ
+    schiebt die Nachricht dann ueber `retouren.dlx` in die Dead-Letter-Queue
+    `retouren.dlq`, statt sie zu verlieren oder endlos neu zuzustellen.
+    Gibt True bei Ack und False bei Nack zurueck.
+    """
+    try:
+        verarbeiten(queue, body, handler, store)
+    except Exception:  # noqa: BLE001 - jeder Fehler fuehrt zur Dead-Letter-Queue
+        logger.exception("Nachricht nicht verarbeitbar -> Dead-Letter-Queue")
+        channel.basic_nack(delivery_tag, requeue=False)
+        return False
+    channel.basic_ack(delivery_tag)
+    return True
+
+
 def consume(
     queue: str,
     handler: Callable[[Event], None],
@@ -177,13 +204,7 @@ def consume(
         channel.basic_qos(prefetch_count=1)
 
         def on_message(ch, method, _properties, body):
-            try:
-                verarbeiten(queue, body, handler, store)
-            except Exception:  # noqa: BLE001 - jeder Fehler fuehrt zur Dead-Letter-Queue
-                logger.exception("Nachricht nicht verarbeitbar -> Dead-Letter-Queue")
-                ch.basic_nack(method.delivery_tag, requeue=False)
-            else:
-                ch.basic_ack(method.delivery_tag)
+            bestaetigen(ch, method.delivery_tag, queue, body, handler, store)
 
         channel.basic_consume(queue, on_message)
         logger.info("Consumer wartet auf Queue '{}'", queue)

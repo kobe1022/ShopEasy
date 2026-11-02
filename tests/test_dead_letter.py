@@ -1,0 +1,143 @@
+"""Tests fuer die Dead-Letter-Queue (Issue #22).
+
+Eine kaputte Nachricht soll in `retouren.dlq` landen, statt verloren zu gehen.
+RabbitMQ macht das selbst, wenn der Consumer die Nachricht mit Nack ohne
+Requeue ablehnt. Hier wird geprueft, dass der Consumer genau das tut. RabbitMQ
+muss dafuer nicht laufen: ein Fake-Channel merkt sich nur Ack und Nack.
+"""
+
+import pytest
+
+from shopeasy.consumers import eventlog
+from shopeasy.shared import broker
+from shopeasy.shared.events import (
+    Event,
+    EventType,
+    PruefungAbgeschlossenPayload,
+    build_event,
+)
+from shopeasy.shared.models import Zustand
+
+
+class FakeChannel:
+    """Merkt sich, welche Nachricht bestaetigt (Ack) oder abgelehnt (Nack) wurde."""
+
+    def __init__(self) -> None:
+        self.acks: list[int] = []
+        self.nacks: list[tuple[int, bool]] = []
+
+    def basic_ack(self, delivery_tag):
+        self.acks.append(delivery_tag)
+
+    def basic_nack(self, delivery_tag, requeue=True):
+        self.nacks.append((delivery_tag, requeue))
+
+
+@pytest.fixture
+def store(tmp_path):
+    return broker.VerarbeiteteEvents(tmp_path / "verarbeitet.db")
+
+
+def gutes_event() -> Event:
+    return build_event(
+        EventType.PRUEFUNG_ABGESCHLOSSEN,
+        "RET-2026-000001",
+        "test",
+        PruefungAbgeschlossenPayload(condition=Zustand.NEUWERTIG, inspector="lager"),
+    )
+
+
+def test_kaputtes_json_landet_in_der_dead_letter_queue(store):
+    channel = FakeChannel()
+
+    ok = broker.bestaetigen(channel, 1, "eventlog", b"{kein json", print, store)
+
+    assert ok is False
+    assert channel.nacks == [(1, False)]  # Nack OHNE Requeue -> retouren.dlq
+    assert channel.acks == []
+
+
+def test_falscher_payload_landet_in_der_dead_letter_queue(store, monkeypatch, tmp_path):
+    # Event-Typ "pruefung.abgeschlossen", aber im Payload fehlt "condition"
+    monkeypatch.setattr(eventlog, "EVENTLOG_PATH", str(tmp_path / "eventlog.csv"))
+    kaputt = Event(
+        event_type=EventType.PRUEFUNG_ABGESCHLOSSEN,
+        retouren_id="RET-2026-000001",
+        source="test",
+        payload={"inspector": "lager"},
+    )
+    channel = FakeChannel()
+
+    ok = broker.bestaetigen(
+        channel,
+        7,
+        "eventlog",
+        kaputt.model_dump_json().encode(),
+        eventlog.handle,
+        store,
+    )
+
+    assert ok is False
+    assert channel.nacks == [(7, False)]
+    assert not (tmp_path / "eventlog.csv").exists()  # nichts ins Event-Log
+
+
+def test_abgelehnte_nachricht_wird_nicht_als_verarbeitet_gemerkt(store):
+    event = gutes_event()
+
+    def handler_mit_fehler(_event):
+        raise RuntimeError("Datenbank weg")
+
+    broker.bestaetigen(
+        FakeChannel(),
+        1,
+        "eventlog",
+        event.model_dump_json().encode(),
+        handler_mit_fehler,
+        store,
+    )
+
+    assert not store.bereits_verarbeitet("eventlog", event.event_id)
+
+
+def test_gute_und_doppelte_nachricht_werden_bestaetigt(store):
+    nachricht = gutes_event().model_dump_json().encode()
+    channel = FakeChannel()
+
+    broker.bestaetigen(channel, 1, "eventlog", nachricht, lambda e: None, store)
+    broker.bestaetigen(channel, 2, "eventlog", nachricht, lambda e: None, store)
+
+    # Auch das Duplikat bekommt ein Ack: es ist kein Fehler und gehoert nicht in
+    # die Dead-Letter-Queue.
+    assert channel.acks == [1, 2]
+    assert channel.nacks == []
+
+
+class TopologieChannel:
+    """Merkt sich, welche Exchanges, Queues und Bindungen angelegt werden."""
+
+    def __init__(self) -> None:
+        self.queues: dict[str, dict] = {}
+        self.bindungen: list[tuple[str, str]] = []
+
+    def exchange_declare(self, exchange, exchange_type, durable):
+        pass
+
+    def queue_declare(self, queue, durable, arguments=None):
+        self.queues[queue] = arguments or {}
+
+    def queue_bind(self, queue, exchange, routing_key=None):
+        self.bindungen.append((queue, exchange))
+
+
+def test_jede_queue_leitet_abgelehnte_nachrichten_in_die_dlq():
+    channel = TopologieChannel()
+
+    broker.declare_topology(channel)
+
+    for queue in broker.QUEUES:
+        assert (
+            channel.queues[queue]["x-dead-letter-exchange"]
+            == broker.DEAD_LETTER_EXCHANGE
+        )
+    assert (broker.DEAD_LETTER_QUEUE, broker.DEAD_LETTER_EXCHANGE) in channel.bindungen
