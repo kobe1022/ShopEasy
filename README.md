@@ -143,7 +143,7 @@ Die Tests laufen ohne RabbitMQ. Den Ablauf mit allen Diensten zeigt `scripts/dem
 
 | Person   | Teil                                          | Ordner                                                                                             |
 | -------- | --------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| Nikky    | REST: Mock-Marktplatz, Retouren-Service       | `src/shopeasy/marketplace_mock/`, `src/shopeasy/return_service/`                                   |
+| Niklas   | REST: Mock-Marktplatz, Retouren-Service       | `src/shopeasy/marketplace_mock/`, `src/shopeasy/return_service/`                                   |
 | Benjamin | gRPC: Wareneingang, Scanner-CLI, Docker, Demo | `proto/`, `src/shopeasy/warehouse_grpc/`, `src/shopeasy/clients/`, `scripts/demo.py`, `Dockerfile` |
 | Muhammed | Messaging: Broker-Helper, Consumer            | `src/shopeasy/shared/broker.py`, `src/shopeasy/consumers/`                                         |
 
@@ -157,5 +157,5 @@ Ein KI-Assistent (Claude) wurde eingesetzt. Bei diesen Teilen wurden wir durch d
 | Person   | Teil                                    | Wobei die KI geholfen hat          |
 | -------- | --------------------------------------- | ---------------------------------- |
 | Benjamin | gRPC-Service, Scanner-CLI, Docker, Demo | Code, Tests, Dokumentation, Gerüst |
-| Nikky    | Mock-Marktplatz, Retouren-Service       | Code, Tests, Fehlersuche           |
+| Niklas   | Mock-Marktplatz, Retouren-Service       | Code, Tests, Fehlersuche           |
 | Muhammed | Broker-Helper, Consumer                 | Code, Tests, Mailtexte             |
